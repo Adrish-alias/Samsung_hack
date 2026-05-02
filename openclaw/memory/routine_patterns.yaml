@@ -1,0 +1,23 @@
+locations:
+  home:
+    confidence: 0.0
+    labels: []
+  office:
+    confidence: 0.0
+    labels: []
+
+routines:
+  office_arrival_window: null
+  fatigue_windows: []
+  commute_patterns: []
+
+pack_feedback:
+  office_focus_high_stress:
+    accepted: 0
+    rejected: 0
+  recovery_mode:
+    accepted: 0
+    rejected: 0
+  commute_alert:
+    accepted: 0
+    rejected: 0

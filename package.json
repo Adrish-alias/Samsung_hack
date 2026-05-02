@@ -1,0 +1,19 @@
+{
+  "name": "cape",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CAPE: Context-Aware Policy Engine",
+  "scripts": {
+    "test": "node packages/cape-core/test/run-tests.js",
+    "demo:decision": "node packages/cape-core/demo/demo-decision.js",
+    "demo:scenarios": "node packages/cape-core/demo/demo-scenarios.js",
+    "gateway:test": "node packages/cape-gateway/test/run-tests.js",
+    "gateway:start": "node packages/cape-gateway/src/server.js"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  }
+}

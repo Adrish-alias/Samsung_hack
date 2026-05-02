@@ -1,0 +1,16 @@
+user:
+  display_name: CAPE Demo User
+  timezone: Asia/Calcutta
+  consent:
+    calendar: false
+    location: false
+    usage_stats: false
+    notification_policy_access: false
+    write_settings: false
+
+preferences:
+  automation_style: ask_when_uncertain
+  minimum_confidence_to_apply: 0.78
+  quiet_hours:
+    start: "22:30"
+    end: "06:30"
