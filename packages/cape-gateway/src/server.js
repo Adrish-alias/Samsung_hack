@@ -4,12 +4,22 @@ const path = require('path');
 const { buildDecision } = require('../../cape-core/src');
 const { buildCommutePlan } = require('./commute-planner');
 const { buildReasoningNote } = require('./ollama-reasoner');
+const { createYamlMemoryStore } = require('./yaml-memory');
+const { createRoutineMemoryAgent } = require('./routine-memory-agent');
+const { createSafetyPermissionAgent } = require('./safety-permission-agent');
+const { createFeedbackLearningAgent } = require('./feedback-learning-agent');
 
 const DEFAULT_PORT = Number(process.env.CAPE_GATEWAY_PORT ?? 8787);
 const DEFAULT_HOST = process.env.CAPE_GATEWAY_HOST ?? '127.0.0.1';
 const MEMORY_DIR = process.env.OPENCLAW_CAPE_MEMORY_DIR ?? path.resolve(__dirname, '../../../openclaw/runtime');
+const OPENCLAW_MEMORY_DIR = process.env.OPENCLAW_CAPE_PROFILE_DIR ?? path.resolve(__dirname, '../../../openclaw/memory');
 
 function createServer() {
+  const memoryStore = createYamlMemoryStore(OPENCLAW_MEMORY_DIR);
+  const routineMemoryAgent = createRoutineMemoryAgent(memoryStore);
+  const safetyAgent = createSafetyPermissionAgent();
+  const feedbackLearningAgent = createFeedbackLearningAgent(memoryStore);
+
   return http.createServer(async (req, res) => {
     try {
       if (req.method === 'GET' && req.url === '/health') {
@@ -22,12 +32,14 @@ function createServer() {
 
       if (req.method === 'POST' && req.url === '/v1/context/decision') {
         const body = await readJson(req);
-        const commutePlan = await buildCommutePlan(body);
-        const contextWithPlan = { ...body, commutePlan };
+        const memoryHydratedContext = routineMemoryAgent.hydrateContext(body);
+        const commutePlan = await buildCommutePlan(memoryHydratedContext);
+        const contextWithPlan = { ...memoryHydratedContext, commutePlan };
         const previewDecision = buildDecision(contextWithPlan);
         const reasoningNote = await buildReasoningNote(contextWithPlan, previewDecision);
         const enrichedContext = { ...contextWithPlan, reasoningNote };
-        const decision = buildDecision(enrichedContext);
+        const baseDecision = buildDecision(enrichedContext);
+        const decision = safetyAgent.evaluate(enrichedContext, baseDecision);
         const agentTrace = buildAgentTrace(enrichedContext, decision);
         persistEvent({
           kind: 'context_decision',
@@ -47,13 +59,16 @@ function createServer() {
 
       if (req.method === 'POST' && req.url === '/v1/feedback') {
         const body = await readJson(req);
+        const learning = feedbackLearningAgent.record(body);
         persistEvent({
           kind: 'feedback',
-          feedback: body
+          feedback: body,
+          learning
         });
         return sendJson(res, 200, {
           ok: true,
-          message: 'feedback_recorded'
+          message: 'feedback_recorded',
+          learning
         });
       }
 
@@ -80,6 +95,11 @@ function buildAgentTrace(context, decision) {
       output: `${decision.stress.score}/100 ${decision.stress.level}`
     },
     {
+      agent: 'routine-memory',
+      status: 'ok',
+      output: `min confidence ${context.memory?.minimumConfidenceToApply ?? 'n/a'}`
+    },
+    {
       agent: 'decision-orchestrator',
       status: 'ok',
       output: `${decision.type} ${decision.packId}`
@@ -98,14 +118,16 @@ function buildAgentTrace(context, decision) {
     },
     {
       agent: 'safety-permission',
-      status: decision.blockedByPermission.length > 0 ? 'blocked' : 'ok',
-      output: decision.blockedByPermission.length > 0
-        ? decision.blockedByPermission.join(', ')
-        : 'required permissions available'
+      status: decision.safety?.status ?? (decision.blockedByPermission.length > 0 ? 'blocked' : 'ok'),
+      output: decision.safety?.blockers?.length
+        ? decision.safety.blockers.join(', ')
+        : decision.blockedByPermission.length > 0
+          ? decision.blockedByPermission.join(', ')
+          : 'required permissions available'
     },
     {
       agent: 'pack-execution',
-      status: decision.actions.length > 0 ? 'ready' : 'observe',
+      status: decision.type === 'SUGGEST_PACK' ? 'suggest' : (decision.actions.length > 0 ? 'ready' : 'observe'),
       output: decision.actions.join(', ') || 'no actions'
     }
   ];
@@ -132,6 +154,7 @@ function renderSummary(event) {
       `Pack: ${event.feedback.packId ?? 'unknown'}`,
       `Signal: ${event.feedback.signal ?? 'unknown'}`,
       `Note: ${event.feedback.note ?? ''}`,
+      `Learning: ${(event.learning?.updated?.learned ?? []).join(', ') || 'none'}`,
       ''
     ].join('\n');
   }

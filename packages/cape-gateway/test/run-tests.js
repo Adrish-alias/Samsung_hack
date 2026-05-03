@@ -1,5 +1,6 @@
 const assert = require('assert');
 const { createServer } = require('../src/server');
+require('./agents.test');
 
 async function main() {
   const server = createServer();
