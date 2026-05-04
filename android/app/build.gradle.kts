@@ -15,13 +15,15 @@ android {
         versionName = "0.1.0"
     }
 
+    // compileOptions targets Android bytecode — must stay at 17 (Android max supported)
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_25
-        targetCompatibility = JavaVersion.VERSION_25
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
+    // jvmToolchain tells Kotlin which JDK to use on this machine (Java 25 is installed)
     kotlin {
-        jvmToolchain(25)
+        jvmToolchain(17)
     }
 
     buildFeatures {
