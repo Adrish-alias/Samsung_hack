@@ -9,3 +9,11 @@ node_modules/
 *.aab
 *.keystore
 dist/
+
+# Gradle local cache (generated during build)
+android/.gradle/
+
+# OpenClaw runtime output (generated at runtime, not source)
+openclaw/runtime/events.jsonl
+openclaw/runtime/latest-context.json
+openclaw/runtime/latest-summary.md
