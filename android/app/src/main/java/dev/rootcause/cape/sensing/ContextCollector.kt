@@ -12,7 +12,10 @@ import android.provider.Settings
 import androidx.core.content.ContextCompat
 import dev.rootcause.cape.core.ContextCollectionResult
 import dev.rootcause.cape.core.ContextSnapshot
+import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Locale
+import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 import kotlin.math.roundToInt
 
@@ -24,6 +27,7 @@ class ContextCollector(private val context: Context) {
         val sleepDebt = readSleepProxyDebt(notes)
         val locationReading = readLocationState(notes)
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val now = Calendar.getInstance()
 
         val snapshot = ContextSnapshot(
             locationState = locationReading.state,
@@ -36,7 +40,12 @@ class ContextCollector(private val context: Context) {
             currentLatitude = locationReading.latitude,
             currentLongitude = locationReading.longitude,
             notificationPolicyAccess = notificationManager.isNotificationPolicyAccessGranted,
-            writeSettings = Settings.System.canWrite(context)
+            writeSettings = Settings.System.canWrite(context),
+            nextMeetingTitle = meetingStats.nextMeetingTitle,
+            currentTimeIso = isoFormatter().format(now.time),
+            dayOfWeek = now.getDisplayName(Calendar.DAY_OF_WEEK, Calendar.LONG, Locale.US)?.lowercase(Locale.US),
+            hourOfDay = now.get(Calendar.HOUR_OF_DAY),
+            timezone = TimeZone.getDefault().id
         )
 
         return ContextCollectionResult(snapshot, notes)
@@ -58,7 +67,7 @@ class ContextCollector(private val context: Context) {
     private fun readMeetings(notes: MutableList<String>): MeetingStats {
         if (!hasPermission(Manifest.permission.READ_CALENDAR)) {
             notes.add("Calendar permission missing; meeting load is 0.")
-            return MeetingStats(0, null, null)
+            return MeetingStats(0, null, null, null)
         }
 
         val now = System.currentTimeMillis()
@@ -83,24 +92,33 @@ class ContextCollector(private val context: Context) {
         var count = 0
         var nextStart: Long? = null
         var nextLocation: String? = null
+        var nextTitle: String? = null
         context.contentResolver.query(uri, projection, null, null, "${CalendarContract.Instances.BEGIN} ASC")?.use { cursor ->
             val beginIndex = cursor.getColumnIndexOrThrow(CalendarContract.Instances.BEGIN)
             val locationIndex = cursor.getColumnIndexOrThrow(CalendarContract.Instances.EVENT_LOCATION)
+            val titleIndex = cursor.getColumnIndexOrThrow(CalendarContract.Instances.TITLE)
             while (cursor.moveToNext()) {
                 val begin = cursor.getLong(beginIndex)
                 count += 1
                 if (begin >= now && nextStart == null) {
                     nextStart = begin
                     nextLocation = cursor.getString(locationIndex)?.takeIf { it.isNotBlank() }
+                    nextTitle = cursor.getString(titleIndex)?.takeIf { it.isNotBlank() }
                 }
             }
         }
 
-        notes.add("Calendar read: $count meetings remaining/today${nextLocation?.let { "; next location present" } ?: ""}.")
+        notes.add(
+            "Calendar read: $count meetings remaining/today" +
+                (nextTitle?.let { "; next \"$it\"" } ?: "") +
+                (nextLocation?.let { "; next location present" } ?: "") +
+                "."
+        )
         return MeetingStats(
             meetingLoadToday = count,
             nextMeetingMinutes = nextStart?.let { TimeUnit.MILLISECONDS.toMinutes(it - now).coerceAtLeast(0).toInt() },
-            nextMeetingLocation = nextLocation
+            nextMeetingLocation = nextLocation,
+            nextMeetingTitle = nextTitle
         )
     }
 
@@ -176,7 +194,8 @@ class ContextCollector(private val context: Context) {
     private data class MeetingStats(
         val meetingLoadToday: Int,
         val nextMeetingMinutes: Int?,
-        val nextMeetingLocation: String?
+        val nextMeetingLocation: String?,
+        val nextMeetingTitle: String?
     )
 
     private data class LocationReading(
@@ -190,5 +209,11 @@ class ContextCollector(private val context: Context) {
         private const val KEY_LAST_SLEEP_MINUTES = "last_sleep_minutes"
         private const val DEFAULT_SLEEP_MINUTES = 420L
         private const val TARGET_SLEEP_MINUTES = 480L
+    }
+
+    private fun isoFormatter(): SimpleDateFormat {
+        return SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US).apply {
+            timeZone = TimeZone.getDefault()
+        }
     }
 }

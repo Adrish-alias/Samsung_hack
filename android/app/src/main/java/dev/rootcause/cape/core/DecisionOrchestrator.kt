@@ -14,17 +14,28 @@ class DecisionOrchestrator(
             }
         }
 
+        val shouldSuggest = blocked.isEmpty() && pack.actions.isNotEmpty() && pack.confidence < 0.78
+        val applyActions = when {
+            blocked.isNotEmpty() -> emptyList()
+            shouldSuggest -> emptyList()
+            else -> pack.actions
+        }
+        val suggestedActions = if (shouldSuggest) pack.actions else emptyList()
+
         return CapeDecision(
             type = when {
                 blocked.isNotEmpty() -> "REQUEST_PERMISSION"
+                shouldSuggest -> "SUGGEST_PACK"
                 pack.actions.isNotEmpty() -> "APPLY_PACK"
                 else -> "OBSERVE"
             },
             packId = pack.id,
             stress = stress,
-            actions = if (blocked.isEmpty()) pack.actions else emptyList(),
+            actions = applyActions,
+            suggestedActions = suggestedActions,
             blockedByPermission = blocked,
             explanation = explanation(pack.id, stress, blocked),
+            confidence = pack.confidence,
             commutePlan = null,
             reasoningNote = null
         )
@@ -32,22 +43,22 @@ class DecisionOrchestrator(
 
     private fun selectPack(context: ContextSnapshot, stress: StressResult): Pack {
         if (context.locationState == "commuting" && (context.nextMeetingMinutes ?: Int.MAX_VALUE) <= 120) {
-            return Pack("commute_alert", listOf("SEND_DEPARTURE_ALERT"))
+            return Pack("commute_alert", 0.86, listOf("SEND_DEPARTURE_ALERT"))
         }
 
         if (context.locationState == "office" && stress.score >= 60) {
-            return Pack("office_focus_high_stress", listOf("DND_ON", "RINGER_VIBRATE", "BRIGHTNESS_40"))
+            return Pack("office_focus_high_stress", 0.88, listOf("DND_ON", "RINGER_VIBRATE", "BRIGHTNESS_40"))
         }
 
         if (stress.score >= 60 && stress.reasons.contains("sleep_debt")) {
-            return Pack("recovery_mode", listOf("SOFT_NOTIFICATIONS", "BREAK_REMINDER", "BRIGHTNESS_65"))
+            return Pack("recovery_mode", 0.82, listOf("SOFT_NOTIFICATIONS", "BREAK_REMINDER", "BRIGHTNESS_65"))
         }
 
         if (context.locationState == "home") {
-            return Pack("home_evening", listOf("DND_OFF", "RINGER_NORMAL", "BRIGHTNESS_AUTO"))
+            return Pack("home_evening", 0.74, listOf("DND_OFF", "RINGER_NORMAL", "BRIGHTNESS_AUTO"))
         }
 
-        return Pack("observe_only", emptyList())
+        return Pack("observe_only", 0.65, emptyList())
     }
 
     private fun requiredPermissions(actions: List<String>): List<String> {
@@ -73,6 +84,7 @@ class DecisionOrchestrator(
 
     private data class Pack(
         val id: String,
+        val confidence: Double,
         val actions: List<String>
     )
 }

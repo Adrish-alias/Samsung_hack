@@ -116,6 +116,7 @@ function defaultRoutine() {
     overrides: {
       blocked_packs: [],
       blocked_keywords: [],
+      conditional_blocks: [],
       notes: []
     }
   };

@@ -1,9 +1,11 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { buildDecision } = require('../../cape-core/src');
-const { buildCommutePlan } = require('./commute-planner');
 const { buildReasoningNote } = require('./ollama-reasoner');
+const { createContextIntakeAgent } = require('./context-intake-agent');
+const { createStressScoringAgent } = require('./stress-scoring-agent');
+const { createCommuteAgent } = require('./commute-agent');
+const { createDecisionOrchestratorAgent } = require('./decision-orchestrator-agent');
 const { createYamlMemoryStore } = require('./yaml-memory');
 const { createRoutineMemoryAgent } = require('./routine-memory-agent');
 const { createSafetyPermissionAgent } = require('./safety-permission-agent');
@@ -14,9 +16,16 @@ const DEFAULT_HOST = process.env.CAPE_GATEWAY_HOST ?? '127.0.0.1';
 const MEMORY_DIR = process.env.OPENCLAW_CAPE_MEMORY_DIR ?? path.resolve(__dirname, '../../../openclaw/runtime');
 const OPENCLAW_MEMORY_DIR = process.env.OPENCLAW_CAPE_PROFILE_DIR ?? path.resolve(__dirname, '../../../openclaw/memory');
 
-function createServer() {
-  const memoryStore = createYamlMemoryStore(OPENCLAW_MEMORY_DIR);
+function createServer(options = {}) {
+  const runtimeDir = options.runtimeDir ?? MEMORY_DIR;
+  const memoryDir = options.memoryDir ?? OPENCLAW_MEMORY_DIR;
+  const reasoningNoteBuilder = options.reasoningNoteBuilder ?? buildReasoningNote;
+  const memoryStore = createYamlMemoryStore(memoryDir);
+  const contextIntakeAgent = createContextIntakeAgent({ now: options.now });
   const routineMemoryAgent = createRoutineMemoryAgent(memoryStore);
+  const stressScoringAgent = createStressScoringAgent();
+  const commuteAgent = createCommuteAgent();
+  const decisionOrchestratorAgent = createDecisionOrchestratorAgent();
   const safetyAgent = createSafetyPermissionAgent();
   const feedbackLearningAgent = createFeedbackLearningAgent(memoryStore);
 
@@ -32,18 +41,32 @@ function createServer() {
 
       if (req.method === 'POST' && req.url === '/v1/context/decision') {
         const body = await readJson(req);
-        const memoryHydratedContext = routineMemoryAgent.hydrateContext(body);
-        const commutePlan = await buildCommutePlan(memoryHydratedContext);
-        const contextWithPlan = { ...memoryHydratedContext, commutePlan };
-        const previewDecision = buildDecision(contextWithPlan);
-        const reasoningNote = await buildReasoningNote(contextWithPlan, previewDecision);
-        const enrichedContext = { ...contextWithPlan, reasoningNote };
-        const baseDecision = buildDecision(enrichedContext);
-        const decision = safetyAgent.evaluate(enrichedContext, baseDecision);
-        const agentTrace = buildAgentTrace(enrichedContext, decision);
-        persistEvent({
+        const normalizedContext = contextIntakeAgent.normalize(body);
+        const memoryHydratedContext = routineMemoryAgent.hydrateContext(normalizedContext);
+        const stress = stressScoringAgent.score(memoryHydratedContext);
+        const commutePlan = await commuteAgent.plan({ ...memoryHydratedContext, stress });
+        const previewDecision = decisionOrchestratorAgent.decide({
+          context: memoryHydratedContext,
+          stress,
+          commutePlan
+        });
+        const reasoningNote = await reasoningNoteBuilder({ ...memoryHydratedContext, stress, commutePlan }, previewDecision);
+        const baseDecision = {
+          ...previewDecision,
+          reasoningNote
+        };
+        const decision = safetyAgent.evaluate({ ...memoryHydratedContext, stress, commutePlan, reasoningNote }, baseDecision);
+        routineMemoryAgent.rememberObservation(memoryHydratedContext, stress, commutePlan, decision);
+        const agentTrace = buildAgentTrace({
+          context: memoryHydratedContext,
+          stress,
+          commutePlan,
+          reasoningNote,
+          decision
+        });
+        persistEvent(runtimeDir, {
           kind: 'context_decision',
-          context: enrichedContext,
+          context: publicContext(memoryHydratedContext),
           decision,
           agentTrace
         });
@@ -60,7 +83,7 @@ function createServer() {
       if (req.method === 'POST' && req.url === '/v1/feedback') {
         const body = await readJson(req);
         const learning = feedbackLearningAgent.record(body);
-        persistEvent({
+        persistEvent(runtimeDir, {
           kind: 'feedback',
           feedback: body,
           learning
@@ -82,17 +105,12 @@ function createServer() {
   });
 }
 
-function buildAgentTrace(context, decision) {
+function buildAgentTrace({ context, stress, commutePlan, reasoningNote, decision }) {
   const trace = [
     {
       agent: 'context-intake',
       status: 'ok',
-      output: `Normalized ${Object.keys(context).length} context fields`
-    },
-    {
-      agent: 'stress-scoring',
-      status: 'ok',
-      output: `${decision.stress.score}/100 ${decision.stress.level}`
+      output: `Normalized ${context.rawSignalCount ?? Object.keys(context).length} raw signals into CAPE context`
     },
     {
       agent: 'routine-memory',
@@ -100,21 +118,26 @@ function buildAgentTrace(context, decision) {
       output: `min confidence ${context.memory?.minimumConfidenceToApply ?? 'n/a'}`
     },
     {
-      agent: 'decision-orchestrator',
+      agent: 'stress-scoring',
       status: 'ok',
-      output: `${decision.type} ${decision.packId}`
+      output: stress.summary
     },
     {
       agent: 'commute-agent',
-      status: context.commutePlan ? 'ok' : 'skipped',
-      output: context.commutePlan
-        ? `${context.commutePlan.source}: leave by ${context.commutePlan.leaveByLocal}`
+      status: commutePlan ? 'ok' : 'skipped',
+      output: commutePlan
+        ? `${commutePlan.source}: leave by ${commutePlan.leaveByLocal}`
         : 'no upcoming meeting window'
     },
     {
+      agent: 'decision-orchestrator',
+      status: 'ok',
+      output: `${decision.type} ${decision.packId} (${decision.confidence.toFixed(2)})`
+    },
+    {
       agent: 'ollama-reasoning',
-      status: context.reasoningNote?.startsWith('Ollama reasoning unavailable') ? 'fallback' : 'ok',
-      output: context.reasoningNote || 'no note'
+      status: reasoningNote?.startsWith('Ollama reasoning unavailable') ? 'fallback' : 'ok',
+      output: reasoningNote || 'no note'
     },
     {
       agent: 'safety-permission',
@@ -134,15 +157,15 @@ function buildAgentTrace(context, decision) {
   return trace;
 }
 
-function persistEvent(event) {
-  fs.mkdirSync(MEMORY_DIR, { recursive: true });
+function persistEvent(runtimeDir, event) {
+  fs.mkdirSync(runtimeDir, { recursive: true });
   const enriched = {
     ...event,
     recordedAt: new Date().toISOString()
   };
-  fs.appendFileSync(path.join(MEMORY_DIR, 'events.jsonl'), `${JSON.stringify(enriched)}\n`);
-  fs.writeFileSync(path.join(MEMORY_DIR, 'latest-context.json'), JSON.stringify(enriched, null, 2));
-  fs.writeFileSync(path.join(MEMORY_DIR, 'latest-summary.md'), renderSummary(enriched));
+  fs.appendFileSync(path.join(runtimeDir, 'events.jsonl'), `${JSON.stringify(enriched)}\n`);
+  fs.writeFileSync(path.join(runtimeDir, 'latest-context.json'), JSON.stringify(enriched, null, 2));
+  fs.writeFileSync(path.join(runtimeDir, 'latest-summary.md'), renderSummary(enriched));
 }
 
 function renderSummary(event) {
@@ -165,6 +188,7 @@ function renderSummary(event) {
     `Recorded: ${event.recordedAt}`,
     `Decision: ${event.decision.type}`,
     `Pack: ${event.decision.packId}`,
+    `Confidence: ${event.decision.confidence?.toFixed?.(2) ?? 'n/a'}`,
     `Stress: ${event.decision.stress.score}/100 ${event.decision.stress.level}`,
     `Actions: ${event.decision.actions.join(', ') || 'none'}`,
     `Blocked: ${event.decision.blockedByPermission.join(', ') || 'none'}`,
@@ -179,6 +203,11 @@ function renderSummary(event) {
     ''
   ];
   return lines.join('\n');
+}
+
+function publicContext(context) {
+  const { memory, ...publicFields } = context;
+  return publicFields;
 }
 
 function readJson(req) {

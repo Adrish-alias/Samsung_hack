@@ -33,6 +33,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -86,10 +87,12 @@ fun CapeApp(onRequestRuntimePermissions: () -> Unit = {}) {
     val context = LocalContext.current
     val collector = remember { ContextCollector(context.applicationContext) }
     var collection by remember { mutableStateOf(collector.collect()) }
-    var decision by remember { mutableStateOf(DecisionOrchestrator().decide(collection.snapshot)) }
+    var selectedScenario by remember { mutableStateOf(ScenarioPreset.Live) }
+    var decision by remember { mutableStateOf(DecisionOrchestrator().decide(applyScenario(collection.snapshot, selectedScenario))) }
     var feedback by remember { mutableStateOf("No feedback yet") }
     var applyStatus by remember { mutableStateOf("Pack not applied yet") }
     var gatewayStatus by remember { mutableStateOf("Gateway not called yet") }
+    var feedbackNote by remember { mutableStateOf("Don't do this during 1:1s on Fridays") }
     var isLoading by remember { mutableStateOf(false) }
 
     DisposableEffect(Unit) {
@@ -119,6 +122,18 @@ fun CapeApp(onRequestRuntimePermissions: () -> Unit = {}) {
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Header()
+                ScenarioPanel(
+                    selected = selectedScenario,
+                    onSelect = { scenario ->
+                        selectedScenario = scenario
+                        decision = DecisionOrchestrator().decide(applyScenario(collection.snapshot, scenario))
+                        gatewayStatus = if (scenario == ScenarioPreset.Live) {
+                            "Using live collected context"
+                        } else {
+                            "Using ${scenario.label} demo scenario"
+                        }
+                    }
+                )
                 PermissionPanel(
                     permissions = readPermissionState(context),
                     onRequestRuntimePermissions = onRequestRuntimePermissions,
@@ -135,20 +150,26 @@ fun CapeApp(onRequestRuntimePermissions: () -> Unit = {}) {
                     isLoading = isLoading,
                     onRefreshLocal = {
                         collection = collector.collect()
-                        decision = DecisionOrchestrator().decide(collection.snapshot)
-                        gatewayStatus = "Local decision refreshed"
+                        val effective = applyScenario(collection.snapshot, selectedScenario)
+                        decision = DecisionOrchestrator().decide(effective)
+                        gatewayStatus = if (selectedScenario == ScenarioPreset.Live) {
+                            "Local decision refreshed"
+                        } else {
+                            "Local decision refreshed with ${selectedScenario.label} scenario"
+                        }
                     },
                     onAskGateway = {
                         isLoading = true
                         gatewayStatus = "Calling CAPE gateway..."
                         Thread {
                             val fresh = collector.collect()
-                            val result = runCatching { GatewayClient().requestDecision(fresh.snapshot) }
+                            val effective = applyScenario(fresh.snapshot, selectedScenario)
+                            val result = runCatching { GatewayClient().requestDecision(effective) }
                             (context as? ComponentActivity)?.runOnUiThread {
                                 collection = fresh
                                 decision = result.getOrElse {
                                     gatewayStatus = "Gateway failed: ${it.message}. Local fallback used."
-                                    DecisionOrchestrator().decide(fresh.snapshot)
+                                    DecisionOrchestrator().decide(effective)
                                 }
                                 if (result.isSuccess) gatewayStatus = "Decision returned by CAPE gateway/OpenClaw bridge"
                                 isLoading = false
@@ -160,11 +181,20 @@ fun CapeApp(onRequestRuntimePermissions: () -> Unit = {}) {
                     decision = decision,
                     applyStatus = applyStatus,
                     onApply = {
-                        applyStatus = PackExecutor(context).apply(decision)
+                        val executable = if (decision.type == "SUGGEST_PACK" && decision.suggestedActions.isNotEmpty()) {
+                            decision.copy(type = "APPLY_PACK", actions = decision.suggestedActions)
+                        } else {
+                            decision
+                        }
+                        applyStatus = PackExecutor(context).apply(executable)
                     }
                 )
-                ContextPanel(collection.snapshot, collection.notes)
-                FeedbackPanel(feedback) { signal, note ->
+                ContextPanel(applyScenario(collection.snapshot, selectedScenario), collection.notes, selectedScenario)
+                FeedbackPanel(
+                    feedback = feedback,
+                    note = feedbackNote,
+                    onNoteChange = { feedbackNote = it }
+                ) { signal, note ->
                     feedback = "$signal: sending feedback..."
                     Thread {
                         val result = runCatching {
@@ -172,11 +202,36 @@ fun CapeApp(onRequestRuntimePermissions: () -> Unit = {}) {
                         }
                         (context as? ComponentActivity)?.runOnUiThread {
                             feedback = result.fold(
-                                onSuccess = { "$signal: feedback recorded by gateway" },
+                                onSuccess = {
+                                    buildString {
+                                        append("$signal: ${it.message}")
+                                        if (it.learned.isNotEmpty()) {
+                                            append(" | learned: ${it.learned.joinToString()}")
+                                        }
+                                    }
+                                },
                                 onFailure = { "$signal: local only (${it.message})" }
                             )
                         }
                     }.start()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ScenarioPanel(selected: ScenarioPreset, onSelect: (ScenarioPreset) -> Unit) {
+    Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(8.dp)) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Demo Scenarios", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                ScenarioPreset.values().forEach { scenario ->
+                    FilterChip(
+                        selected = selected == scenario,
+                        onClick = { onSelect(scenario) },
+                        label = { Text(scenario.label) }
+                    )
                 }
             }
         }
@@ -244,14 +299,25 @@ private fun DecisionPanel(decision: CapeDecision, applyStatus: String, onApply: 
                 Text("Decision", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 StatusPill(decision.type)
             }
+            MetricRow("Confidence", String.format("%.2f", decision.confidence))
             MetricRow("Stress", "${decision.stress.score}/100 ${decision.stress.level}")
             MetricRow("Pack", decision.packId)
             if (decision.actions.isNotEmpty()) {
                 Text("Actions", style = MaterialTheme.typography.labelLarge)
                 decision.actions.forEach { ActionItem(it) }
             }
+            if (decision.suggestedActions.isNotEmpty()) {
+                Text("Suggested actions", style = MaterialTheme.typography.labelLarge)
+                decision.suggestedActions.forEach { ActionItem(it) }
+            }
             if (decision.blockedByPermission.isNotEmpty()) {
                 Text("Blocked by ${decision.blockedByPermission.joinToString()}", color = Color(0xFFB42318))
+            }
+            decision.safety?.let { safety ->
+                MetricRow("Safety", safety.status)
+                if (safety.blockers.isNotEmpty()) {
+                    Text(safety.blockers.joinToString(), color = Color(0xFFB42318))
+                }
             }
             decision.commutePlan?.let { plan ->
                 Text("Commute", style = MaterialTheme.typography.labelLarge)
@@ -263,9 +329,15 @@ private fun DecisionPanel(decision: CapeDecision, applyStatus: String, onApply: 
                 Text("Ollama Reasoning", style = MaterialTheme.typography.labelLarge)
                 Text(note, style = MaterialTheme.typography.bodyMedium)
             }
+            if (decision.agentTrace.isNotEmpty()) {
+                Text("Agent Trace", style = MaterialTheme.typography.labelLarge)
+                decision.agentTrace.forEach { item ->
+                    Text("${item.agent}: ${item.status} - ${item.output}", style = MaterialTheme.typography.bodySmall)
+                }
+            }
             Text(decision.explanation, style = MaterialTheme.typography.bodyLarge)
-            Button(onClick = onApply, enabled = decision.type == "APPLY_PACK") {
-                Text("Apply Pack")
+            Button(onClick = onApply, enabled = decision.type == "APPLY_PACK" || decision.type == "SUGGEST_PACK") {
+                Text(if (decision.type == "SUGGEST_PACK") "Apply Suggestion" else "Apply Pack")
             }
             Text(applyStatus, style = MaterialTheme.typography.bodyMedium)
         }
@@ -273,17 +345,20 @@ private fun DecisionPanel(decision: CapeDecision, applyStatus: String, onApply: 
 }
 
 @Composable
-private fun ContextPanel(snapshot: ContextSnapshot, notes: List<String>) {
+private fun ContextPanel(snapshot: ContextSnapshot, notes: List<String>, scenario: ScenarioPreset) {
     Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(8.dp)) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Live Context Snapshot", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            MetricRow("Scenario", scenario.label)
             MetricRow("Location", snapshot.locationState)
             MetricRow("Sleep debt", "${snapshot.sleepDebtMinutes} min")
             MetricRow("Meetings today", snapshot.meetingLoadToday.toString())
             MetricRow("Commute delay", "${snapshot.commuteDelayMinutes} min")
             MetricRow("Screen time 2h", "${snapshot.screenTimeLast2hMinutes} min")
             MetricRow("Next meeting", snapshot.nextMeetingMinutes?.let { "$it min" } ?: "none")
+            MetricRow("Meeting title", snapshot.nextMeetingTitle ?: "none")
             MetricRow("Destination", snapshot.nextMeetingLocation ?: "none")
+            MetricRow("Day / hour", listOfNotNull(snapshot.dayOfWeek, snapshot.hourOfDay?.toString()).joinToString(" / ").ifBlank { "unknown" })
             MetricRow(
                 "Coordinates",
                 if (snapshot.currentLatitude != null && snapshot.currentLongitude != null) {
@@ -301,14 +376,25 @@ private fun ContextPanel(snapshot: ContextSnapshot, notes: List<String>) {
 }
 
 @Composable
-private fun FeedbackPanel(feedback: String, onFeedback: (String, String) -> Unit) {
+private fun FeedbackPanel(
+    feedback: String,
+    note: String,
+    onNoteChange: (String) -> Unit,
+    onFeedback: (String, String) -> Unit
+) {
     Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(8.dp)) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Feedback Loop", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(feedback)
+            OutlinedTextField(
+                value = note,
+                onValueChange = onNoteChange,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Override or feedback note") }
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { onFeedback("accepted", "User marked the pack useful") }) { Text("Useful") }
-                TextButton(onClick = { onFeedback("rejected", "User rejected or delayed the pack") }) { Text("Not now") }
+                Button(onClick = { onFeedback("accepted", note.ifBlank { "User marked the pack useful" }) }) { Text("Useful") }
+                TextButton(onClick = { onFeedback("rejected", note.ifBlank { "User rejected or delayed the pack" }) }) { Text("Not now") }
             }
         }
     }
@@ -334,6 +420,7 @@ private fun PermissionRow(label: String, granted: Boolean) {
 private fun StatusPill(text: String) {
     val color = when (text) {
         "APPLY_PACK", "Granted" -> Color(0xFF0F766E)
+        "SUGGEST_PACK" -> Color(0xFFB54708)
         "REQUEST_PERMISSION", "Missing" -> Color(0xFFB42318)
         else -> Color(0xFF475467)
     }
@@ -379,3 +466,56 @@ private data class PermissionState(
     val notificationPolicyAccess: Boolean,
     val writeSettings: Boolean
 )
+
+private enum class ScenarioPreset(val label: String) {
+    Live("Live"),
+    Office("Office"),
+    Commute("Commute"),
+    Recovery("Recovery"),
+    Home("Home")
+}
+
+private fun applyScenario(snapshot: ContextSnapshot, scenario: ScenarioPreset): ContextSnapshot {
+    return when (scenario) {
+        ScenarioPreset.Live -> snapshot
+        ScenarioPreset.Office -> snapshot.copy(
+            locationState = "office",
+            sleepDebtMinutes = maxOf(snapshot.sleepDebtMinutes, 90),
+            meetingLoadToday = maxOf(snapshot.meetingLoadToday, 6),
+            commuteDelayMinutes = maxOf(snapshot.commuteDelayMinutes, 18),
+            screenTimeLast2hMinutes = maxOf(snapshot.screenTimeLast2hMinutes, 70),
+            nextMeetingMinutes = 25,
+            nextMeetingLocation = snapshot.nextMeetingLocation ?: "Samsung Office",
+            nextMeetingTitle = snapshot.nextMeetingTitle ?: "Sprint Review"
+        )
+        ScenarioPreset.Commute -> snapshot.copy(
+            locationState = "commuting",
+            sleepDebtMinutes = maxOf(snapshot.sleepDebtMinutes, 45),
+            meetingLoadToday = maxOf(snapshot.meetingLoadToday, 3),
+            commuteDelayMinutes = maxOf(snapshot.commuteDelayMinutes, 28),
+            nextMeetingMinutes = 35,
+            nextMeetingLocation = snapshot.nextMeetingLocation ?: "Client Meeting",
+            nextMeetingTitle = snapshot.nextMeetingTitle ?: "Client Call"
+        )
+        ScenarioPreset.Recovery -> snapshot.copy(
+            locationState = "home",
+            sleepDebtMinutes = maxOf(snapshot.sleepDebtMinutes, 130),
+            meetingLoadToday = maxOf(snapshot.meetingLoadToday, 4),
+            commuteDelayMinutes = 0,
+            screenTimeLast2hMinutes = maxOf(snapshot.screenTimeLast2hMinutes, 20),
+            nextMeetingMinutes = snapshot.nextMeetingMinutes ?: 180,
+            nextMeetingLocation = snapshot.nextMeetingLocation,
+            nextMeetingTitle = snapshot.nextMeetingTitle ?: "Deep Work"
+        )
+        ScenarioPreset.Home -> snapshot.copy(
+            locationState = "home",
+            sleepDebtMinutes = minOf(snapshot.sleepDebtMinutes, 40),
+            meetingLoadToday = minOf(snapshot.meetingLoadToday, 1),
+            commuteDelayMinutes = 0,
+            screenTimeLast2hMinutes = minOf(snapshot.screenTimeLast2hMinutes, 35),
+            nextMeetingMinutes = null,
+            nextMeetingLocation = null,
+            nextMeetingTitle = null
+        )
+    }
+}
