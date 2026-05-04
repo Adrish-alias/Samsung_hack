@@ -140,11 +140,11 @@ function parseYaml(source) {
 
     const parent = stack[stack.length - 1].value;
 
-    if (trimmed.startsWith('- ')) {
+    if (trimmed === '-' || trimmed.startsWith('- ')) {
       if (!Array.isArray(parent)) {
         throw new Error(`Invalid YAML array structure near line ${index + 1}`);
       }
-      const itemText = trimmed.slice(2).trim();
+      const itemText = trimmed === '-' ? '' : trimmed.slice(2).trim();
       if (!itemText) {
         const child = {};
         parent.push(child);
@@ -169,7 +169,7 @@ function parseYaml(source) {
     if (valueText === '') {
       const next = nextMeaningfulLine(lines, index + 1);
       const nextTrimmed = next?.trim() ?? '';
-      const child = nextTrimmed.startsWith('- ') ? [] : {};
+      const child = (nextTrimmed === '-' || nextTrimmed.startsWith('- ')) ? [] : {};
       parent[key] = child;
       stack.push({ indent, value: child });
     } else {

@@ -54,6 +54,10 @@ async function runAgentModuleTests() {
   });
 
   assert.strictEqual(normalized.dayOfWeek, 'monday');
+  assert.strictEqual(
+    intake.normalize({ currentTimeIso: 'not-a-date' }).currentTimeIso,
+    '2026-05-04T03:45:00.000Z'
+  );
   const hydrated = routineMemory.hydrateContext(normalized);
   assert.strictEqual(hydrated.memory.minimumConfidenceToApply, 0.78);
 
@@ -65,6 +69,9 @@ async function runAgentModuleTests() {
   assert.strictEqual(preview.packId, 'commute_alert');
 
   routineMemory.rememberObservation(hydrated, stress, commutePlan, preview);
+  const memoryAfterObservation = store.readAll();
+  assert.strictEqual(memoryAfterObservation.routine.routines.commute_patterns[0].destination, 'Samsung Office');
+  assert.strictEqual(memoryAfterObservation.routine.routines.commute_patterns[0].avg_eta_minutes, 35);
 
   let decision = safety.evaluate(hydrated, {
     ...preview,
@@ -114,6 +121,29 @@ async function runAgentModuleTests() {
 
   assert.strictEqual(decision.type, 'OBSERVE');
   assert.strictEqual(decision.safety.status, 'blocked');
+
+  const quietHoursDecision = safety.evaluate({ ...rehydrated, hourOfDay: 23, minuteOfHour: 15 }, {
+    type: 'APPLY_PACK',
+    packId: 'commute_alert',
+    confidence: 0.91,
+    stress: { score: 66, level: 'high' },
+    actions: ['SEND_DEPARTURE_ALERT'],
+    suggestedActions: [],
+    blockedByPermission: [],
+    explanation: 'test',
+    commutePlan: {
+      source: 'heuristic',
+      etaMinutes: 30,
+      bufferMinutes: 15,
+      leaveInMinutes: 25,
+      leaveByLocal: '11:55 PM',
+      shouldAlert: true,
+      reason: 'test'
+    }
+  });
+
+  assert.strictEqual(quietHoursDecision.type, 'OBSERVE');
+  assert.ok(quietHoursDecision.safety.blockers.includes('quiet hours suppress this automation'));
 
   const soul = fs.readFileSync(store.paths.soulPath, 'utf8');
   assert.ok(soul.includes('Avoid office_focus_high_stress on friday.'));

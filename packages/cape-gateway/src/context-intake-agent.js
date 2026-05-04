@@ -3,7 +3,7 @@ function createContextIntakeAgent(options = {}) {
 
   function normalize(rawContext = {}) {
     const timezone = asText(rawContext.timezone) || 'Asia/Kolkata';
-    const currentTimeIso = asText(rawContext.currentTimeIso) || now().toISOString();
+    const currentTimeIso = safeIso(rawContext.currentTimeIso, now);
     const clock = buildClock(currentTimeIso, timezone, rawContext.dayOfWeek, rawContext.hourOfDay);
     const permissions = normalizePermissions(rawContext);
     const currentLocation = normalizeLocation(rawContext);
@@ -136,6 +136,13 @@ function asNullableText(value) {
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+function safeIso(value, now) {
+  const text = asText(value);
+  if (!text) return now().toISOString();
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? now().toISOString() : text;
 }
 
 module.exports = {
