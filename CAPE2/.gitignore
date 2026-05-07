@@ -1,0 +1,27 @@
+.gradle/
+.idea/
+.env
+local.properties
+build/
+node_modules/
+*.iml
+*.apk
+*.aab
+*.keystore
+dist/
+.android-sdk/
+.android-home/
+.downloads/
+.jdks/
+
+# Gradle local cache (generated during build)
+android/.gradle/
+
+# OpenClaw runtime output (generated at runtime, not source)
+openclaw/runtime/events.jsonl
+openclaw/runtime/context-log.jsonl
+openclaw/runtime/session-log.jsonl
+openclaw/runtime/latest-context.json
+openclaw/runtime/latest-summary.md
+openclaw/runtime/latest-session.md
+openclaw/runtime/sessions/

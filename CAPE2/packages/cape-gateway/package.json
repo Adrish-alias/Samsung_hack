@@ -1,0 +1,6 @@
+{
+  "name": "@cape/gateway",
+  "version": "0.1.0",
+  "type": "commonjs",
+  "main": "src/server.js"
+}

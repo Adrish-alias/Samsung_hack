@@ -1,0 +1,27 @@
+user:
+  display_name: CAPE Demo User
+  timezone: Asia/Kolkata
+  consent:
+    calendar: false
+    location: false
+    usage_stats: false
+    notification_policy_access: true
+    write_settings: true
+
+
+preferences:
+  automation_style: ask_when_uncertain
+  minimum_confidence_to_apply: 0.78
+  quiet_hours:
+    start: "22:30"
+    end: "06:30"
+
+
+stress_triggers:
+  reflection_adjustments:
+    Heavy workload: 30
+    Assignments: 10
+
+  adjustment: 10
+  last_reflection_at: "2026-05-06T23:43:07+05:30"
+

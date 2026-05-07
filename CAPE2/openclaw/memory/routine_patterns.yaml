@@ -1,0 +1,162 @@
+locations:
+  home:
+    confidence: 0.74
+    labels:
+      - Kempegowda International Airport Bengaluru, Karnataka 560300, India
+
+  office:
+    confidence: 0.36
+    labels:
+      - Kempegowda International Airport Bengaluru, Karnataka 560300, India
+      - 12.9716,77.5946
+
+
+routines:
+  office_arrival_window: "22:00-23:00"
+  fatigue_windows:
+    - monday@22
+    - wednesday@22
+    - wednesday@23
+    - thursday@0
+    - thursday@1
+    - thursday@2
+    - thursday@6
+    - thursday@7
+  commute_patterns:
+    -
+      destination: Church Street, Church St, Haridevpur, Shanthala Nagar, Ashok Nagar, Bengaluru, Karnataka, India
+      avg_eta_minutes: 30
+      observations: 40
+      last_recorded_at: "2026-05-05T01:15:44+05:30"
+
+    -
+      destination: Kempegowda International Airport Bengaluru, Karnataka 560300, India
+      avg_eta_minutes: 30
+      observations: 183
+      last_recorded_at: "2026-05-05T01:03:54+05:30"
+
+    -
+      destination: 12.9716,77.5946
+      avg_eta_minutes: 21
+      observations: 2
+      last_recorded_at: "2026-05-06T16:54:37.575Z"
+
+    -
+      destination: VIVIDUS HOSPITAL, No 33, 357, HMT Main Rd, opp. Vishal Mega Mart, Gokula 1st Stage, Nanjappa Reddy Colony, Mathikere, Bengaluru, Karnataka 560054, India
+      avg_eta_minutes: 0
+      observations: 48
+      last_recorded_at: "2026-05-04T23:43:13+05:30"
+
+    -
+      destination: 12.2958,76.6394
+      avg_eta_minutes: 151
+      observations: 1
+      last_recorded_at: "2026-05-04T18:12:40.227Z"
+
+    -
+      destination: Mysore Palace
+      avg_eta_minutes: 151
+      observations: 1
+      last_recorded_at: "2026-05-04T18:23:47.195Z"
+
+    -
+      destination: Nitte Meenakshi Institute of Technology, Nitte University Campus, 6429, NITTE Meenakshi College Rd, BSF Campus, Yelahanka, Bengaluru, Govindapura, Karnataka 560064, India
+      avg_eta_minutes: 22
+      observations: 27
+      last_recorded_at: "2026-05-06T00:30:10+05:30"
+
+    -
+      destination: MSRIT ENGG COLLEGE APEX BLOCK, 4/1, MSR College Rd, A.K.Colony, Mathikere Extension, Devasandra Layout, Bengaluru, Karnataka 560054, India
+      avg_eta_minutes: 35
+      observations: 18
+      last_recorded_at: "2026-05-06T22:42:45+05:30"
+
+    -
+      destination: McDonald's, 1, 14th Main Rd, 7th Sector, HSR Layout, Bengaluru, Karnataka 560102, India
+      avg_eta_minutes: 45
+      observations: 32
+      last_recorded_at: "2026-05-06T23:07:23+05:30"
+
+    -
+      destination: Kwality mini bazar, 4, 1, MSR College Rd, A.K.Colony, Gokula 1st Stage, Mathikere Extension, Devasandra Layout, Bengaluru, Karnataka 560054, India
+      avg_eta_minutes: 35
+      observations: 18
+      last_recorded_at: "2026-05-06T23:57:33+05:30"
+
+    -
+      destination: Ramaiah Institute of Technology, MSRIT Post, M S R Nagar, Mathikere, Bengaluru, Karnataka 560054, India
+      avg_eta_minutes: 30
+      observations: 16
+      last_recorded_at: "2026-05-07T01:26:00+05:30"
+
+    -
+      destination: 13.0307823,77.5649893
+      avg_eta_minutes: 35
+      observations: 32
+      last_recorded_at: "2026-05-07T07:00:25+05:30"
+
+  time_based_stress_trends:
+    -
+      hour: 23
+      tags: Heavy workload,Assignments
+      adjustment: 25
+      note: Smoke reflection
+      recorded_at: "2026-05-06T23:42:47.2297883+05:30"
+
+    -
+      hour: 23
+      tags: Heavy workload
+      adjustment: 15
+      note: none
+      recorded_at: "2026-05-06T23:43:07+05:30"
+
+
+pack_feedback:
+  office_focus_high_stress:
+    accepted: 1
+    rejected: 0
+
+  recovery_mode:
+    accepted: 0
+    rejected: 0
+
+  commute_alert:
+    accepted: 0
+    rejected: 0
+
+  observe_only:
+    accepted: 2
+    rejected: 2
+
+  unknown:
+    accepted: 0
+    rejected: 0
+
+
+overrides:
+  blocked_packs:
+    - observe_only
+    - office_focus_high_stress
+  blocked_keywords:
+    - meeting
+  conditional_blocks:
+    -
+      pack_id: observe_only
+      meeting_keyword: "1:1s"
+
+    -
+      pack_id: observe_only
+      weekday: friday
+
+    -
+      pack_id: office_focus_high_stress
+      meeting_keyword: "1:1s"
+
+    -
+      pack_id: office_focus_high_stress
+      weekday: friday
+
+  notes:
+    - "Don't do this during 1:1s on Fridays"
+    - it is important that you compare my live location to the location of the next meeting and use Google maps and binary search to find optimal departure time. don't give random departure time actually calculate using Google maps api and tell.
+
