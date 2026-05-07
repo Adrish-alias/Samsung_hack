@@ -16,12 +16,15 @@ preferences:
     start: "22:30"
     end: "06:30"
 
+  todo_update_windows:
+    - "22:00"
 
 stress_triggers:
   reflection_adjustments:
     Heavy workload: 30
-    Assignments: 10
+    Assignments: 20
+    Personal stress: 15
 
-  adjustment: 10
-  last_reflection_at: "2026-05-06T23:43:07+05:30"
+  adjustment: 16
+  last_reflection_at: "2026-05-07T21:53:54+05:30"
 

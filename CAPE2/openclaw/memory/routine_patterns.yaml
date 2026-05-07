@@ -1,6 +1,6 @@
 locations:
   home:
-    confidence: 0.74
+    confidence: 0.79
     labels:
       - Kempegowda International Airport Bengaluru, Karnataka 560300, India
 
@@ -22,12 +22,15 @@ routines:
     - thursday@2
     - thursday@6
     - thursday@7
+    - thursday@21
+    - thursday@22
+    - thursday@23
   commute_patterns:
     -
       destination: Church Street, Church St, Haridevpur, Shanthala Nagar, Ashok Nagar, Bengaluru, Karnataka, India
       avg_eta_minutes: 30
-      observations: 40
-      last_recorded_at: "2026-05-05T01:15:44+05:30"
+      observations: 192
+      last_recorded_at: "2026-05-07T22:58:26+05:30"
 
     -
       destination: Kempegowda International Airport Bengaluru, Karnataka 560300, India
@@ -95,6 +98,12 @@ routines:
       observations: 32
       last_recorded_at: "2026-05-07T07:00:25+05:30"
 
+    -
+      destination: Church Street, Bengaluru, Karnataka, India
+      avg_eta_minutes: 26
+      observations: 1
+      last_recorded_at: "2026-05-07T21:49:06.3586456+05:30"
+
   time_based_stress_trends:
     -
       hour: 23
@@ -110,6 +119,15 @@ routines:
       note: none
       recorded_at: "2026-05-06T23:43:07+05:30"
 
+    -
+      hour: 21
+      tags: Assignments,Personal stress
+      adjustment: 25
+      note: none
+      recorded_at: "2026-05-07T21:53:54+05:30"
+
+  todo_update_windows:
+    - "22:00"
 
 pack_feedback:
   office_focus_high_stress:
@@ -159,4 +177,25 @@ overrides:
   notes:
     - "Don't do this during 1:1s on Fridays"
     - it is important that you compare my live location to the location of the next meeting and use Google maps and binary search to find optimal departure time. don't give random departure time actually calculate using Google maps api and tell.
+
+runtime_state:
+  last_applied_pack_id: commute_alert
+  last_applied_at: "2026-05-07T22:50:45+05:30"
+  last_applied_actions:
+    - DND_OFF
+    - RINGER_NORMAL
+    - BRIGHTNESS_65
+    - WALLPAPER_COMMUTE
+    - SEND_DEPARTURE_ALERT
+  dnd_on_since: null
+  last_stress_score: 63
+  last_stress_raw_score: 63
+  last_stress_at: "2026-05-07T23:08:26+05:30"
+
+todo_state:
+  last_update_at: "2026-05-07T22:53:14.942402+05:30"
+  pending: 0
+  urgent: 0
+  overdue: 0
+  last_note: "completed:assignment 2"
 

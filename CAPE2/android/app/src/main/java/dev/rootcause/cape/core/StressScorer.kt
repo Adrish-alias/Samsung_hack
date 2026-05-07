@@ -11,15 +11,17 @@ class StressScorer {
         val commute = normalize(context.commuteDelayMinutes, 45)
         val usage = normalize(context.screenTimeLast2hMinutes, 120)
         val meetings = normalize(context.meetingLoadToday, 8)
+        val todo = normalize(context.todoPressureScore, 100)
         val workloadBoost = if (context.implicitWorkload == "HIGH") 10 else 0
         val mixedBoost = if (context.foregroundAppCategory == "mixed") 5 else 0
         val score = (((0.25 * sleep) +
-            (0.20 * appSwitches) +
-            (0.15 * unlocks) +
+            (0.14 * appSwitches) +
+            (0.10 * unlocks) +
             (0.15 * usage) +
             (0.10 * notifications) +
             (0.10 * commute) +
-            (0.05 * meetings))
+            (0.08 * meetings) +
+            (0.08 * todo))
             .times(100)
             .roundToInt() + workloadBoost + mixedBoost).coerceIn(0, 100)
 
@@ -31,6 +33,7 @@ class StressScorer {
             if (commute >= 0.45) add("commute_pressure")
             if (usage >= 0.65) add("high_usage_intensity")
             if (meetings >= 0.5) add("meeting_load")
+            if (todo >= 0.45) add("todo_pressure")
             if (context.implicitWorkload == "HIGH") add("implicit_workload")
             if (context.foregroundAppCategory == "mixed") add("mixed_app_context")
         }

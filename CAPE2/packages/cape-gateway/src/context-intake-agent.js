@@ -22,6 +22,11 @@ function createContextIntakeAgent(options = {}) {
       foregroundAppCategory: normalizeAppCategory(rawContext.foregroundAppCategory),
       timeAtLocationMinutes: asInt(rawContext.timeAtLocationMinutes, 0, 24 * 60),
       implicitWorkload: normalizeWorkload(rawContext.implicitWorkload),
+      todoPendingCount: asInt(rawContext.todoPendingCount, 0, 200),
+      todoUrgentCount: asInt(rawContext.todoUrgentCount, 0, 200),
+      todoOverdueCount: asInt(rawContext.todoOverdueCount, 0, 200),
+      todoPressureScore: asInt(rawContext.todoPressureScore, 0, 100),
+      learnedTodoUpdateHours: normalizeHourList(rawContext.learnedTodoUpdateHours),
       taskFragmentationScore: asInt(rawContext.taskFragmentationScore ?? rawContext.appSwitchCountLast30Min, 0, 200),
       focusDropScore: asInt(rawContext.focusDropScore ?? rawContext.screenUnlockCountLast30Min, 0, 200),
       nextMeetingMinutes,
@@ -45,6 +50,11 @@ function createContextIntakeAgent(options = {}) {
   return {
     normalize
   };
+}
+
+function normalizeHourList(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map(hour => asOptionalInt(hour, 0, 23)).filter(hour => hour != null).slice(0, 6);
 }
 
 function normalizePermissions(rawContext) {

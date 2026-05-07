@@ -4,11 +4,26 @@ function createFeedbackLearningAgent(store) {
     const profile = snapshot.profile;
     const routine = snapshot.routine;
     const packId = feedback.packId ?? 'unknown';
-    const signal = feedback.signal ?? 'unknown';
+    const signal = classifySignal(feedback.signal ?? 'unknown', feedback.note ?? '');
     const note = String(feedback.note ?? '').trim();
     const lowerNote = note.toLowerCase();
     if (feedback.type === 'daily_reflection') {
       return recordDailyReflection({ feedback, profile, routine, note, store });
+    }
+    if (feedback.type === 'todo_update') {
+      return recordTodoUpdate({ feedback, profile, routine, note, store });
+    }
+    if (feedback.type === 'decision_approval') {
+      routine.decision_approvals ??= [];
+      routine.decision_approvals.push({
+        pack_id: packId,
+        signal,
+        confidence: feedback.confidence ?? null,
+        actions: Array.isArray(feedback.actions) ? feedback.actions.slice(0, 12) : [],
+        note,
+        recorded_at: feedback.timestamp || new Date().toISOString()
+      });
+      if (routine.decision_approvals.length > 50) routine.decision_approvals = routine.decision_approvals.slice(-50);
     }
 
     if (!routine.pack_feedback?.[packId]) {
@@ -102,6 +117,44 @@ function createFeedbackLearningAgent(store) {
   return {
     record
   };
+}
+
+function recordTodoUpdate({ feedback, profile, routine, note, store }) {
+  const timestamp = feedback.timestamp || new Date().toISOString();
+  const hour = new Date(timestamp).getHours();
+  routine.routines ??= {};
+  routine.routines.todo_update_windows ??= [];
+  const window = `${String(hour).padStart(2, '0')}:00`;
+  pushUnique(routine.routines.todo_update_windows, window);
+  routine.todo_state ??= {};
+  routine.todo_state.last_update_at = timestamp;
+  routine.todo_state.pending = Number(feedback.pending ?? 0);
+  routine.todo_state.urgent = Number(feedback.urgent ?? 0);
+  routine.todo_state.overdue = Number(feedback.overdue ?? 0);
+  profile.preferences ??= {};
+  profile.preferences.todo_update_windows = routine.routines.todo_update_windows.slice(-4);
+  const learned = [`todo update window ${window}`];
+  if (note) routine.todo_state.last_note = note;
+  store.appendSoulRule(`At learned todo update windows (${profile.preferences.todo_update_windows.join(', ')}), ask before opening today's todo list.`);
+  store.writeProfile(profile);
+  store.writeRoutine(routine);
+  return {
+    ok: true,
+    updated: {
+      packId: 'day_todo',
+      signal: 'neutral',
+      learned
+    }
+  };
+}
+
+function classifySignal(signal, note) {
+  const raw = String(signal ?? '').toLowerCase();
+  if (raw === 'accepted' || raw === 'rejected' || raw === 'neutral' || raw === 'reflection') return raw;
+  const lower = String(note ?? '').toLowerCase();
+  if (/bad|wrong|late|fix|missed|too much|annoying|reject/.test(lower)) return 'rejected';
+  if (/good|helpful|worked|accurate|nice|yes|approved/.test(lower)) return 'accepted';
+  return 'neutral';
 }
 
 function recordDailyReflection({ feedback, profile, routine, note, store }) {

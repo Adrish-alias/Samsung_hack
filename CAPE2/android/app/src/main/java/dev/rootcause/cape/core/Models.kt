@@ -29,7 +29,12 @@ data class ContextSnapshot(
     val dayOfWeek: String? = null,
     val hourOfDay: Int? = null,
     val timezone: String? = null,
-    val savedPlaces: List<SavedPlace> = emptyList()
+    val savedPlaces: List<SavedPlace> = emptyList(),
+    val todoPendingCount: Int = 0,
+    val todoUrgentCount: Int = 0,
+    val todoOverdueCount: Int = 0,
+    val todoPressureScore: Int = 0,
+    val learnedTodoUpdateHours: List<Int> = emptyList()
 )
 
 data class StressResult(

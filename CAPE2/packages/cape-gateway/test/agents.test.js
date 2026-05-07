@@ -69,6 +69,28 @@ async function runAgentModuleTests() {
 
   const stress = stressAgent.score(hydrated);
   assert.strictEqual(stress.level, 'high');
+  assert.ok(stress.reasons.includes('todo_pressure') || normalized.todoPressureScore === 0);
+
+  const calm = stressAgent.score({ sleepDebtMinutes: 0, meetingLoadToday: 0, commuteDelayMinutes: 0, screenTimeLast2hMinutes: 20, appSwitchCountLast30Min: 2, screenUnlockCountLast30Min: 1, notificationCountLast30Min: 1, foregroundAppCategory: 'work', implicitWorkload: 'LOW', todoPressureScore: 0 });
+  const moderate = stressAgent.score({ sleepDebtMinutes: 45, meetingLoadToday: 3, commuteDelayMinutes: 0, screenTimeLast2hMinutes: 65, appSwitchCountLast30Min: 10, screenUnlockCountLast30Min: 4, notificationCountLast30Min: 6, foregroundAppCategory: 'mixed', implicitWorkload: 'MEDIUM', todoPressureScore: 35 });
+  const highRaw = stressAgent.score({ sleepDebtMinutes: 120, meetingLoadToday: 8, commuteDelayMinutes: 40, screenTimeLast2hMinutes: 120, appSwitchCountLast30Min: 30, screenUnlockCountLast30Min: 12, notificationCountLast30Min: 20, foregroundAppCategory: 'mixed', implicitWorkload: 'HIGH', todoPressureScore: 90 });
+  const smoothed = stressAgent.score({
+    sleepDebtMinutes: 120,
+    meetingLoadToday: 8,
+    commuteDelayMinutes: 40,
+    screenTimeLast2hMinutes: 120,
+    appSwitchCountLast30Min: 30,
+    screenUnlockCountLast30Min: 12,
+    notificationCountLast30Min: 20,
+    foregroundAppCategory: 'mixed',
+    implicitWorkload: 'HIGH',
+    todoPressureScore: 90,
+    memory: { routine: { runtime_state: { last_stress_score: calm.score } } }
+  });
+  assert.ok(calm.score < moderate.score);
+  assert.ok(moderate.score < highRaw.score);
+  assert.ok(smoothed.score < highRaw.score);
+  assert.ok(smoothed.reasons.includes('stress_smoothing'));
 
   const commutePlan = await commuteAgent.plan({ ...hydrated, stress });
   const preview = orchestrator.decide({ context: hydrated, stress, commutePlan });
@@ -102,6 +124,27 @@ async function runAgentModuleTests() {
   assert.strictEqual(learned.ok, true);
   assert.ok(learned.updated.learned.includes('meeting keyword override 1:1s'));
   assert.ok(learned.updated.learned.includes('weekday override friday'));
+
+  const approval = feedback.record({
+    type: 'decision_approval',
+    packId: 'commute_alert',
+    signal: 'accepted',
+    note: 'User approved commute pack',
+    actions: ['SEND_DEPARTURE_ALERT'],
+    confidence: 0.92,
+    timestamp: '2026-05-04T09:20:00+05:30'
+  });
+  assert.strictEqual(approval.updated.signal, 'accepted');
+
+  const todoLearning = feedback.record({
+    type: 'todo_update',
+    pending: 3,
+    urgent: 1,
+    overdue: 1,
+    note: 'Morning todo update',
+    timestamp: '2026-05-04T09:25:00+05:30'
+  });
+  assert.ok(todoLearning.updated.learned.includes('todo update window 03:00') || todoLearning.updated.learned.some(item => item.startsWith('todo update window')));
 
   const reflection = feedback.record({
     type: 'daily_reflection',

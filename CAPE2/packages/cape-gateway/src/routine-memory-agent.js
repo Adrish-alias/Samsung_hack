@@ -35,8 +35,12 @@ function createRoutineMemoryAgent(store) {
     routine.routines ??= {};
     routine.routines.fatigue_windows ??= [];
     routine.routines.commute_patterns ??= [];
+    routine.routines.todo_update_windows ??= routine.routines.todo_update_windows ?? [];
     routine.overrides = ensureOverrides(routine.overrides);
     routine.runtime_state ??= {};
+    routine.runtime_state.last_stress_score = stress.score;
+    routine.runtime_state.last_stress_raw_score = stress.rawScore ?? stress.score;
+    routine.runtime_state.last_stress_at = context.currentTimeIso ?? new Date().toISOString();
 
     profile.user ??= {};
     profile.user.timezone = context.timezone ?? profile.user.timezone;
@@ -62,6 +66,12 @@ function createRoutineMemoryAgent(store) {
 
     if (commutePlan && context.nextMeetingLocation) {
       updateCommutePattern(routine.routines.commute_patterns, context.nextMeetingLocation, commutePlan, context.currentTimeIso);
+    }
+
+    if (Array.isArray(context.learnedTodoUpdateHours)) {
+      for (const hour of context.learnedTodoUpdateHours) {
+        pushUnique(routine.routines.todo_update_windows, `${String(hour).padStart(2, '0')}:00`);
+      }
     }
 
     if (decision && typeof decision === 'object') {

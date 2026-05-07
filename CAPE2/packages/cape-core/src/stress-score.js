@@ -28,6 +28,10 @@ function normalizeNotifications(count) {
   return clamp(count / 20, 0, 1);
 }
 
+function normalizeTodoPressure(score) {
+  return clamp(score / 100, 0, 1);
+}
+
 function levelFor(score) {
   if (score >= 75) return 'critical';
   if (score >= 60) return 'high';
@@ -43,14 +47,16 @@ function calculateStressScore(context) {
   const appSwitches = normalizeAppSwitches(context.appSwitchCountLast30Min ?? context.taskFragmentationScore ?? 0);
   const unlocks = normalizeUnlocks(context.screenUnlockCountLast30Min ?? context.focusDropScore ?? 0);
   const notifications = normalizeNotifications(context.notificationCountLast30Min ?? 0);
+  const todo = normalizeTodoPressure(context.todoPressureScore ?? 0);
 
   const weighted = (0.25 * sleep) +
-    (0.20 * appSwitches) +
-    (0.15 * unlocks) +
+    (0.14 * appSwitches) +
+    (0.10 * unlocks) +
     (0.15 * usage) +
     (0.10 * notifications) +
     (0.10 * commute) +
-    (0.05 * meetings);
+    (0.08 * meetings) +
+    (0.08 * todo);
   const workloadBoost = context.implicitWorkload === 'HIGH' ? 10 : 0;
   const mixedBoost = context.foregroundAppCategory === 'mixed' ? 5 : 0;
   const memoryAdjustment = Number(context.memory?.profile?.stress_triggers?.adjustment ?? 0);
@@ -64,6 +70,7 @@ function calculateStressScore(context) {
   if (commute >= 0.45) reasons.push('commute_pressure');
   if (usage >= 0.65) reasons.push('high_usage_intensity');
   if (meetings >= 0.5) reasons.push('meeting_load');
+  if (todo >= 0.45) reasons.push('todo_pressure');
   if (context.implicitWorkload === 'HIGH') reasons.push('implicit_workload');
   if (context.foregroundAppCategory === 'mixed') reasons.push('mixed_app_context');
 
@@ -78,7 +85,8 @@ function calculateStressScore(context) {
       notifications: Math.round(notifications * 100),
       meetings: Math.round(meetings * 100),
       commute: Math.round(commute * 100),
-      usage: Math.round(usage * 100)
+      usage: Math.round(usage * 100),
+      todo: Math.round(todo * 100)
     }
   };
 }

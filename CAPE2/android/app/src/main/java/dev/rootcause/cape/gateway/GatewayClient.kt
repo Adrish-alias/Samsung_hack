@@ -88,7 +88,47 @@ class GatewayClient(private val baseUrl: String = "http://127.0.0.1:8787") {
         )
     }
 
+    fun sendDecisionApproval(packId: String, signal: String, note: String, actions: List<String>, confidence: Double): FeedbackAck {
+        return sendFeedbackPayload(
+            JSONObject()
+                .put("type", "decision_approval")
+                .put("packId", packId)
+                .put("signal", signal)
+                .put("note", note)
+                .put("actions", JSONArray(actions))
+                .put("confidence", confidence)
+                .put("timestamp", java.time.OffsetDateTime.now().toString())
+                .put("source", "android-apk")
+        )
+    }
+
+    fun sendTodoUpdate(pending: Int, urgent: Int, overdue: Int, note: String, timestamp: String): FeedbackAck {
+        return sendFeedbackPayload(
+            JSONObject()
+                .put("type", "todo_update")
+                .put("packId", "day_todo")
+                .put("signal", "neutral")
+                .put("pending", pending)
+                .put("urgent", urgent)
+                .put("overdue", overdue)
+                .put("note", note)
+                .put("timestamp", timestamp)
+                .put("source", "android-apk")
+        )
+    }
+
     fun sendDailyReflection(tags: List<String>, note: String, timestamp: String): FeedbackAck {
+        return sendFeedbackPayload(
+            JSONObject()
+                .put("type", "daily_reflection")
+                .put("tags", JSONArray(tags))
+                .put("note", note)
+                .put("timestamp", timestamp)
+                .put("source", "android-apk")
+        )
+    }
+
+    private fun sendFeedbackPayload(payload: JSONObject): FeedbackAck {
         val url = URL("$baseUrl/v1/feedback")
         val connection = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
@@ -97,13 +137,6 @@ class GatewayClient(private val baseUrl: String = "http://127.0.0.1:8787") {
             doOutput = true
             setRequestProperty("Content-Type", "application/json")
         }
-
-        val payload = JSONObject()
-            .put("type", "daily_reflection")
-            .put("tags", JSONArray(tags))
-            .put("note", note)
-            .put("timestamp", timestamp)
-            .put("source", "android-apk")
 
         OutputStreamWriter(connection.outputStream).use { writer ->
             writer.write(payload.toString())
@@ -153,6 +186,11 @@ class GatewayClient(private val baseUrl: String = "http://127.0.0.1:8787") {
             .put("dayOfWeek", dayOfWeek)
             .put("hourOfDay", hourOfDay)
             .put("timezone", timezone)
+            .put("todoPendingCount", todoPendingCount)
+            .put("todoUrgentCount", todoUrgentCount)
+            .put("todoOverdueCount", todoOverdueCount)
+            .put("todoPressureScore", todoPressureScore)
+            .put("learnedTodoUpdateHours", JSONArray(learnedTodoUpdateHours))
             .put(
                 "savedPlaces",
                 JSONArray(savedPlaces.map { place ->

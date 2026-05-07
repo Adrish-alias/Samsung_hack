@@ -48,6 +48,7 @@ class ContextCollector(private val context: Context) {
         }
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val now = Calendar.getInstance()
+        val todoStats = readTodoStats()
 
         val snapshot = ContextSnapshot(
             locationState = locationState,
@@ -79,7 +80,12 @@ class ContextCollector(private val context: Context) {
             dayOfWeek = now.getDisplayName(Calendar.DAY_OF_WEEK, Calendar.LONG, Locale.US)?.lowercase(Locale.US),
             hourOfDay = now.get(Calendar.HOUR_OF_DAY),
             timezone = TimeZone.getDefault().id,
-            savedPlaces = savedPlaces
+            savedPlaces = savedPlaces,
+            todoPendingCount = todoStats.pending,
+            todoUrgentCount = todoStats.urgent,
+            todoOverdueCount = todoStats.overdue,
+            todoPressureScore = todoStats.pressure,
+            learnedTodoUpdateHours = todoStats.learnedHours
         )
 
         return ContextCollectionResult(snapshot, notes)
@@ -356,6 +362,35 @@ class ContextCollector(private val context: Context) {
         }.getOrDefault(emptyList())
     }
 
+    private fun readTodoStats(): TodoStats {
+        val raw = prefs().getString(KEY_DAY_TODOS, "{}") ?: "{}"
+        val now = System.currentTimeMillis()
+        val today = java.time.LocalDate.now().toString()
+        return runCatching {
+            val root = org.json.JSONObject(raw)
+            if (root.optString("date") != today) return@runCatching TodoStats(0, 0, 0, 0, readLearnedTodoHours())
+            val items = root.optJSONArray("items") ?: org.json.JSONArray()
+            var pending = 0
+            var urgent = 0
+            var overdue = 0
+            for (index in 0 until items.length()) {
+                val item = items.getJSONObject(index)
+                if (item.optBoolean("completed")) continue
+                pending += 1
+                val due = item.optLong("dueAt", 0L)
+                if (due > 0L && due < now) overdue += 1
+                if (due > 0L && due <= now + TimeUnit.HOURS.toMillis(3)) urgent += 1
+            }
+            val pressure = (pending * 8 + urgent * 12 + overdue * 20).coerceIn(0, 100)
+            TodoStats(pending, urgent, overdue, pressure, readLearnedTodoHours())
+        }.getOrDefault(TodoStats(0, 0, 0, 0, readLearnedTodoHours()))
+    }
+
+    private fun readLearnedTodoHours(): List<Int> {
+        val raw = prefs().getString(KEY_LEARNED_TODO_HOURS, "") ?: ""
+        return raw.split(',').mapNotNull { it.toIntOrNull() }.filter { it in 0..23 }.distinct().take(3)
+    }
+
     private fun classifyPlace(location: LocationReading, savedPlaces: List<SavedPlace>, notes: MutableList<String>): String? {
         val lat = location.latitude ?: return null
         val lng = location.longitude ?: return null
@@ -422,12 +457,22 @@ class ContextCollector(private val context: Context) {
         val foregroundCategory: String
     )
 
+    private data class TodoStats(
+        val pending: Int,
+        val urgent: Int,
+        val overdue: Int,
+        val pressure: Int,
+        val learnedHours: List<Int>
+    )
+
     companion object {
         private const val KEY_LAST_SCREEN_OFF = "last_screen_off"
         private const val KEY_LAST_SLEEP_MINUTES = "last_sleep_minutes"
         private const val KEY_SAVED_PLACES = "saved_places"
         private const val KEY_UNLOCK_EVENTS = "unlock_events"
         private const val KEY_NOTIFICATION_EVENTS = "notification_events"
+        private const val KEY_DAY_TODOS = "day_todos"
+        private const val KEY_LEARNED_TODO_HOURS = "learned_todo_update_hours"
         private const val KEY_LAST_LOCATION_STATE = "last_location_state"
         private const val KEY_PREVIOUS_LOCATION_STATE = "previous_location_state"
         private const val KEY_LOCATION_STATE_SINCE = "location_state_since"

@@ -19,6 +19,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.provider.Settings
 import android.provider.CalendarContract
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -40,6 +41,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -53,7 +55,6 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.lightColorScheme
@@ -224,14 +225,35 @@ class CapeSyncService : Service() {
                     showStressNotification(applicationContext, decision.stress.score, decision.stress.level)
                 }
                 lastStressScore = decision.stress.score
-                applyDynamicThemeWallpaperIfChanged(applicationContext, decision)
-                applyApprovedPackIfChanged(applicationContext, decision)
+                maybeShowTodoPromptNotification(applicationContext, snapshot)
             }.start()
-            handler.postDelayed(this, 60_000)
+            handler.postDelayed(this, SERVICE_SYNC_INTERVAL_MS)
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP_CAPE_SERVICE) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        if (intent?.action == ACTION_PAUSE_CAPE_SERVICE) {
+            val pauseUntil = System.currentTimeMillis() + 60 * 60_000L
+            getSharedPreferences("cape_context", Context.MODE_PRIVATE)
+                .edit()
+                .putLong(KEY_SERVICE_PAUSED_UNTIL, pauseUntil)
+                .apply()
+            handler.removeCallbacks(syncRunnable)
+            startForeground(2001, serviceNotification("Paused for 1 hour"))
+            return START_STICKY
+        }
+        val pausedUntil = getSharedPreferences("cape_context", Context.MODE_PRIVATE)
+            .getLong(KEY_SERVICE_PAUSED_UNTIL, 0L)
+        if (pausedUntil > System.currentTimeMillis()) {
+            startForeground(2001, serviceNotification("Paused for 1 hour"))
+            handler.removeCallbacks(syncRunnable)
+            handler.postDelayed(syncRunnable, pausedUntil - System.currentTimeMillis())
+            return START_STICKY
+        }
         startForeground(2001, serviceNotification())
         handler.removeCallbacks(syncRunnable)
         handler.post(syncRunnable)
@@ -245,12 +267,14 @@ class CapeSyncService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun serviceNotification() = NotificationCompat.Builder(this, COMMUTE_CHANNEL)
-        .setSmallIcon(android.R.drawable.ic_dialog_info)
+    private fun serviceNotification(text: String = "Automatic context and commute sync is active.") = NotificationCompat.Builder(this, COMMUTE_CHANNEL)
+        .setSmallIcon(R.mipmap.ic_launcher)
         .setContentTitle("CAPE is monitoring stress")
-        .setContentText("Automatic context and commute sync is active.")
+        .setContentText(text)
         .setPriority(NotificationCompat.PRIORITY_LOW)
         .setOngoing(true)
+        .addAction(0, "Pause", PendingIntent.getService(this, 3001, Intent(this, CapeSyncService::class.java).setAction(ACTION_PAUSE_CAPE_SERVICE), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+        .addAction(0, "Stop", PendingIntent.getService(this, 3002, Intent(this, CapeSyncService::class.java).setAction(ACTION_STOP_CAPE_SERVICE), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
         .build()
 }
 
@@ -365,9 +389,11 @@ private fun HomeShell(onRequestRuntimePermissions: () -> Unit) {
     var lastStressScore by remember { mutableStateOf(decision.stress.score) }
     var feedbackStatus by remember { mutableStateOf("") }
     var executionStatus by remember { mutableStateOf("") }
-    var autoApplyEnabled by remember { mutableStateOf(prefs.getBoolean(KEY_AUTO_APPLY_ENABLED, true)) }
+    var pendingApproval by remember { mutableStateOf<CapeDecision?>(null) }
     var showReflection by remember { mutableStateOf(false) }
     var reflectionStatus by remember { mutableStateOf("") }
+    var showTodoPrompt by remember { mutableStateOf(shouldPromptForTodoUpdate(context, collection.snapshot)) }
+    var forceTodoEditor by remember { mutableStateOf(false) }
 
     fun syncOnce() {
         Thread {
@@ -379,7 +405,10 @@ private fun HomeShell(onRequestRuntimePermissions: () -> Unit) {
                 val current = result.getOrElse { DecisionOrchestrator().decide(fresh.snapshot) }
                 syncStatus = result.fold(
                     onSuccess = { "Synced just now" },
-                    onFailure = { "Gateway unavailable; local stress shown; cached commute reused if available" }
+                    onFailure = { error ->
+                        Log.e("CAPE", "Gateway sync failed", error)
+                        "Gateway unavailable: ${error.javaClass.simpleName}: ${error.message ?: "no details"}"
+                    }
                 )
                 val cache = loadCommuteCache(context).toMutableMap()
                 resolveCommuteCacheEntry(fresh.snapshot, cache)
@@ -388,9 +417,8 @@ private fun HomeShell(onRequestRuntimePermissions: () -> Unit) {
                 var updated = current
                 if (activeKey != null) {
                     val cached = cache[activeKey]
-                    if (cached != null && !cached.dismissed) {
-                        updated = updated.copy(commutePlan = cached.plan)
-                    } else if (current.commutePlan != null) {
+                    if (current.commutePlan != null) {
+                        val previous = cached?.takeIf { !it.dismissed }
                         cache[activeKey] = CommuteCacheEntry(
                             meetingKey = activeKey,
                             plan = current.commutePlan,
@@ -398,8 +426,13 @@ private fun HomeShell(onRequestRuntimePermissions: () -> Unit) {
                             meetingStartEpochMs = fresh.snapshot.nextMeetingStartEpochMs,
                             proposedDepartureEpochMs = now + current.commutePlan.leaveInMinutes * 60_000L,
                             originLat = fresh.snapshot.currentLatitude,
-                            originLng = fresh.snapshot.currentLongitude
+                            originLng = fresh.snapshot.currentLongitude,
+                            notified = previous?.notified == true,
+                            lateNotified = previous?.lateNotified == true,
+                            departureFeedbackSent = previous?.departureFeedbackSent == true
                         )
+                    } else if (cached != null && !cached.dismissed) {
+                        updated = updated.copy(commutePlan = cached.plan)
                     }
                     val latest = cache[activeKey]
                     // Keep notifications in background service to avoid popups on every app open.
@@ -454,7 +487,9 @@ private fun HomeShell(onRequestRuntimePermissions: () -> Unit) {
                 }
                 saveCommuteCache(context, cache)
                 decision = updated
-                applyDynamicThemeWallpaperIfChanged(context.applicationContext, updated)
+                if (shouldPromptForTodoUpdate(context, fresh.snapshot)) {
+                    showTodoPrompt = true
+                }
                 if (shouldShowReflection(previousLocation, fresh.snapshot, prefs)) {
                     showReflection = true
                 }
@@ -509,18 +544,13 @@ private fun HomeShell(onRequestRuntimePermissions: () -> Unit) {
                 onRequestDndAccess = { openNotificationPolicyAccessSettings(context) },
                 onRequestWriteSettings = { openWriteSettingsPanel(context) },
                 onRequestUsageAccess = { openUsageAccessSettings(context) },
-                autoApplyEnabled = autoApplyEnabled,
-                onAutoApplyChanged = { enabled ->
-                    autoApplyEnabled = enabled
-                    prefs.edit().putBoolean(KEY_AUTO_APPLY_ENABLED, enabled).apply()
-                },
                 onApplyPack = {
                     val executableDecision = if (decision.type == "SUGGEST_PACK") {
                         decision.copy(type = "APPLY_PACK", actions = decision.suggestedActions, suggestedActions = emptyList())
                     } else {
                         decision
                     }
-                    executionStatus = PackExecutor(context.applicationContext).apply(executableDecision)
+                    pendingApproval = executableDecision
                 },
                 onApplyDemoWallpaper = { wallpaperAction ->
                     val demoDecision = decision.copy(
@@ -531,8 +561,7 @@ private fun HomeShell(onRequestRuntimePermissions: () -> Unit) {
                         blockedByPermission = emptyList(),
                         explanation = "Manual wallpaper demo action."
                     )
-                    executionStatus = PackExecutor(context.applicationContext).apply(demoDecision)
-                    prefs.edit().remove(KEY_LAST_DYNAMIC_WALLPAPER).apply()
+                    pendingApproval = demoDecision
                 },
                 executionStatus = executionStatus
             )
@@ -567,8 +596,52 @@ private fun HomeShell(onRequestRuntimePermissions: () -> Unit) {
                 feedbackStatus = feedbackStatus
             )
             HomeSection.Profile -> ProfileSection(collection.snapshot)
-            HomeSection.Plan -> PlanSection(collection.snapshot, onRequestRuntimePermissions)
+            HomeSection.Plan -> TodoSection(
+                snapshot = collection.snapshot,
+                forceEditor = forceTodoEditor,
+                onEditorConsumed = { forceTodoEditor = false }
+            )
         }
+    }
+    pendingApproval?.let { approvalDecision ->
+        ApprovalDialog(
+            decision = approvalDecision,
+            onDecision = { approved ->
+                val outcome = if (approved) "accepted" else "rejected"
+                recordDecisionApproval(context, approvalDecision, outcome)
+                Thread {
+                    runCatching {
+                        GatewayClient().sendDecisionApproval(
+                            packId = approvalDecision.packId,
+                            signal = outcome,
+                            note = if (approved) "User approved CAPE decision." else "User rejected CAPE decision.",
+                            actions = approvalDecision.actions,
+                            confidence = approvalDecision.confidence
+                        )
+                    }
+                }.start()
+                executionStatus = if (approved) {
+                    PackExecutor(context.applicationContext).apply(approvalDecision)
+                } else {
+                    "Rejected by user; no device changes applied."
+                }
+                pendingApproval = null
+            }
+        )
+    }
+    if (showTodoPrompt) {
+        TodoPromptDialog(
+            onDismiss = {
+                markTodoPromptSeen(context)
+                showTodoPrompt = false
+            },
+            onOpen = {
+                markTodoPromptSeen(context)
+                showTodoPrompt = false
+                forceTodoEditor = true
+                selectedSection = HomeSection.Plan
+            }
+        )
     }
     if (showReflection) {
         ReflectionBottomSheet(
@@ -601,6 +674,49 @@ private fun Header(syncStatus: String) {
         Text("Stress Monitor", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
         Text(syncStatus, color = CapeAccent, style = MaterialTheme.typography.bodyMedium)
     }
+}
+
+@Composable
+private fun ApprovalDialog(
+    decision: CapeDecision,
+    onDecision: (Boolean) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = { onDecision(false) },
+        title = { Text("Apply this CAPE decision?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                MetricRow("Pack", decision.packId)
+                MetricRow("Confidence", "%.2f".format(decision.confidence))
+                Text("Key actions", fontWeight = FontWeight.SemiBold)
+                val actions = decision.actions.ifEmpty { decision.suggestedActions }
+                Text(actions.take(5).joinToString().ifBlank { "none" }, color = CapeMuted)
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onDecision(true) }) { Text("YES") }
+        },
+        dismissButton = {
+            OutlinedButton(onClick = { onDecision(false) }) { Text("NO") }
+        },
+        containerColor = Glass
+    )
+}
+
+@Composable
+private fun TodoPromptDialog(onDismiss: () -> Unit, onOpen: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Do you want to update today's todo list?") },
+        text = { Text("CAPE uses this to understand workload pressure and plan gentler decisions.", color = CapeMuted) },
+        confirmButton = {
+            Button(onClick = onOpen) { Text("YES") }
+        },
+        dismissButton = {
+            OutlinedButton(onClick = onDismiss) { Text("NO") }
+        },
+        containerColor = Glass
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -691,8 +807,6 @@ private fun DashboardSection(
     onRequestDndAccess: () -> Unit,
     onRequestWriteSettings: () -> Unit,
     onRequestUsageAccess: () -> Unit,
-    autoApplyEnabled: Boolean,
-    onAutoApplyChanged: (Boolean) -> Unit,
     onApplyPack: () -> Unit,
     onApplyDemoWallpaper: (String) -> Unit,
     executionStatus: String
@@ -740,17 +854,7 @@ private fun DashboardSection(
         MetricRow("Pack", decision.packId)
         MetricRow("Confidence", "%.2f".format(decision.confidence))
         MetricRow("Actions", (decision.actions.ifEmpty { decision.suggestedActions }).joinToString().ifBlank { "none" })
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text("Background auto-apply", fontWeight = FontWeight.SemiBold)
-                Text("Only after safety, permissions, confidence, and this consent pass.", color = CapeMuted)
-            }
-            Switch(checked = autoApplyEnabled, onCheckedChange = onAutoApplyChanged)
-        }
+        Text("CAPE will ask before any device setting changes. Background sync can suggest decisions and commute alerts, but pack execution needs your YES.", color = CapeMuted)
         Button(
             onClick = onApplyPack,
             enabled = decision.type == "APPLY_PACK" || decision.type == "SUGGEST_PACK",
@@ -895,22 +999,14 @@ private fun CommuteSection(
             modifier = Modifier.fillMaxWidth(),
             label = { Text("What happened today?") }
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            Button(
-                onClick = {
-                    onSendFeedback("accepted", feedbackNote.ifBlank { "Commute recommendation worked well." })
-                    feedbackNote = ""
-                },
-                modifier = Modifier.weight(1f)
-            ) { Text("Helpful") }
-            OutlinedButton(
-                onClick = {
-                    onSendFeedback("rejected", feedbackNote.ifBlank { "Departure suggestion timing needs improvement." })
-                    feedbackNote = ""
-                },
-                modifier = Modifier.weight(1f)
-            ) { Text("Needs Fix") }
-        }
+        Button(
+            onClick = {
+                onSendFeedback("neutral", feedbackNote.ifBlank { "Commute feedback submitted without explicit rating." })
+                feedbackNote = ""
+            },
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = CapeAccent)
+        ) { Text("Send feedback to OpenClaw") }
         if (feedbackStatus.isNotBlank()) {
             Text(feedbackStatus, color = CapeMuted)
         }
@@ -1038,61 +1134,92 @@ private fun ProfileSection(snapshot: ContextSnapshot) {
 }
 
 @Composable
-private fun PlanSection(snapshot: ContextSnapshot, onRequestRuntimePermissions: () -> Unit) {
+private fun TodoSection(
+    snapshot: ContextSnapshot,
+    forceEditor: Boolean,
+    onEditorConsumed: () -> Unit
+) {
     val context = LocalContext.current
-    var items by remember { mutableStateOf(generateDailyPlan(context, snapshot)) }
-    var selected by remember { mutableStateOf(items.map { it.id }.toSet()) }
-    var status by remember { mutableStateOf("Confirm true items before adding them to Calendar.") }
-    val permissions = readPermissionState(context)
+    var list by remember { mutableStateOf(loadTodoList(context)) }
+    var draftTitle by remember { mutableStateOf("") }
+    var draftDue by remember { mutableStateOf("") }
+    var updateTimes by remember { mutableStateOf(loadTodoPromptTimes(context)) }
+    var timeDraft by remember { mutableStateOf(updateTimes.joinToString(",")) }
+    var status by remember { mutableStateOf("") }
+
+    LaunchedEffect(forceEditor) {
+        if (forceEditor) {
+            status = "Update today's todos."
+            onEditorConsumed()
+        }
+    }
 
     GlassCard {
-        Text("Daily Plan", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        Text("CAPE builds this from your routine, saved places, and pending meetings, then adds 10-minute reminders for focus automation.", color = CapeMuted)
-        MetricRow("Calendar write", if (permissions.calendarWrite) "Granted" else "Permission needed")
-        if (items.isEmpty()) {
-            Text("No pending routine blocks or meetings left for today.", color = CapeMuted)
+        Text("Day Todo", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Text("Pending work affects CAPE stress scoring. Add due times like 14:30 when urgency matters.", color = CapeMuted)
+        MetricRow("Pending", snapshot.todoPendingCount.toString())
+        MetricRow("Urgent", snapshot.todoUrgentCount.toString())
+        MetricRow("Overdue", snapshot.todoOverdueCount.toString())
+        MetricRow("Todo pressure", "${snapshot.todoPressureScore}/100")
+        if (list.items.isEmpty()) {
+            Text("No todos for today yet.", color = CapeMuted)
         }
-        items.forEach { item ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+        list.items.forEach { item ->
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(item.title, fontWeight = FontWeight.SemiBold)
-                    Text("${item.startLabel} - ${item.endLabel} - ${item.location}", color = CapeMuted)
+                    Text(todoMetaLabel(item), color = CapeMuted)
                 }
                 FilterChip(
-                    selected = selected.contains(item.id),
-                    onClick = { selected = toggleSelected(selected, item.id) },
-                    label = { Text(if (selected.contains(item.id)) "True" else "Skip") }
+                    selected = item.completed,
+                    onClick = {
+                        list = list.copy(items = list.items.map { if (it.id == item.id) it.copy(completed = !it.completed, updatedAt = System.currentTimeMillis()) else it }, updatedAt = System.currentTimeMillis())
+                        saveTodoList(context, list)
+                        recordTodoEdit(context, list, "completed:${item.title}")
+                    },
+                    label = { Text(if (item.completed) "Done" else "Open") }
                 )
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            OutlinedButton(
-                onClick = {
-                    items = generateDailyPlan(context, snapshot)
-                    selected = items.map { it.id }.toSet()
-                    status = "Plan refreshed."
-                },
-                modifier = Modifier.weight(1f)
-            ) { Text("Refresh") }
-            Button(
-                onClick = {
-                    if (!permissions.calendarWrite) {
-                        onRequestRuntimePermissions()
-                        status = "Approve Calendar permission, then tap Add again."
-                    } else {
-                        val count = addPlanItemsToCalendar(context, items.filter { selected.contains(it.id) })
-                        status = "Added $count confirmed item(s). CAPE will prepare focus mode 5-10 min before time."
-                    }
-                },
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = CapeAccent)
-            ) { Text(if (permissions.calendarWrite) "Add to Calendar" else "Grant") }
+        OutlinedTextField(value = draftTitle, onValueChange = { draftTitle = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Todo") })
+        OutlinedTextField(value = draftDue, onValueChange = { draftDue = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Due time HH:mm optional") })
+        Button(
+            onClick = {
+                val title = draftTitle.trim()
+                if (title.isBlank()) return@Button
+                val now = System.currentTimeMillis()
+                val item = TodoItem(
+                    id = "todo_${now}",
+                    title = title,
+                    dueAt = parseTodoDueToday(draftDue),
+                    completed = false,
+                    createdAt = now,
+                    updatedAt = now
+                )
+                list = ensureTodayTodoList(list).copy(items = ensureTodayTodoList(list).items + item, updatedAt = now)
+                saveTodoList(context, list)
+                recordTodoEdit(context, list, "added:$title")
+                draftTitle = ""
+                draftDue = ""
+                status = "Todo saved and sent to OpenClaw."
+            },
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = CapeAccent)
+        ) { Text("Add Todo") }
+        OutlinedTextField(value = timeDraft, onValueChange = { timeDraft = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Prompt times, comma-separated HH:mm") })
+        Button(
+            onClick = {
+                updateTimes = parseTodoPromptTimes(timeDraft)
+                saveTodoPromptTimes(context, updateTimes)
+                status = "Todo update prompt times saved."
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("Save Update Times") }
+        val learned = loadLearnedTodoHours(context)
+        if (learned.isNotEmpty()) {
+            Text("Learned update windows: ${learned.joinToString { "%02d:00".format(it) }}", color = CapeMuted)
         }
-        Text(status, color = CapeMuted)
+        if (status.isNotBlank()) Text(status, color = CapeMuted)
     }
 }
 
@@ -1323,7 +1450,6 @@ private fun saveProfile(context: Context, profile: UserProfile, places: List<Sav
         .edit()
         .putBoolean("onboarded", true)
         .putString("user_name", profile.name)
-        .putBoolean(KEY_AUTO_APPLY_ENABLED, true)
         .apply()
     savePlaces(context, places)
 }
@@ -1791,6 +1917,215 @@ private fun markPlanItemAdded(context: Context, item: DailyPlanItem) {
         .apply()
 }
 
+private fun loadTodoList(context: Context): TodoList {
+    val today = java.time.LocalDate.now().toString()
+    val raw = context.getSharedPreferences("cape_context", Context.MODE_PRIVATE)
+        .getString(KEY_DAY_TODOS, "{}") ?: "{}"
+    return runCatching {
+        val root = JSONObject(raw)
+        val date = root.optString("date", today)
+        val items = root.optJSONArray("items") ?: JSONArray()
+        TodoList(
+            date = date,
+            items = List(items.length()) { index ->
+                val item = items.getJSONObject(index)
+                TodoItem(
+                    id = item.optString("id"),
+                    title = item.optString("title"),
+                    dueAt = item.optLong("dueAt").takeIf { it > 0L },
+                    completed = item.optBoolean("completed"),
+                    createdAt = item.optLong("createdAt"),
+                    updatedAt = item.optLong("updatedAt")
+                )
+            }.filter { it.title.isNotBlank() },
+            updatedAt = root.optLong("updatedAt", System.currentTimeMillis())
+        )
+    }.getOrDefault(TodoList(today, emptyList(), System.currentTimeMillis()))
+        .let { ensureTodayTodoList(it) }
+}
+
+private fun ensureTodayTodoList(list: TodoList): TodoList {
+    val today = java.time.LocalDate.now().toString()
+    return if (list.date == today) list else TodoList(today, emptyList(), System.currentTimeMillis())
+}
+
+private fun saveTodoList(context: Context, list: TodoList) {
+    val json = JSONObject()
+        .put("date", list.date)
+        .put("updatedAt", list.updatedAt)
+        .put(
+            "items",
+            JSONArray(list.items.map { item ->
+                JSONObject()
+                    .put("id", item.id)
+                    .put("title", item.title)
+                    .put("dueAt", item.dueAt)
+                    .put("completed", item.completed)
+                    .put("createdAt", item.createdAt)
+                    .put("updatedAt", item.updatedAt)
+            })
+        )
+    context.getSharedPreferences("cape_context", Context.MODE_PRIVATE).edit()
+        .putString(KEY_DAY_TODOS, json.toString())
+        .apply()
+}
+
+private fun todoPressure(list: TodoList): Triple<Int, Int, Int> {
+    val now = System.currentTimeMillis()
+    var pending = 0
+    var urgent = 0
+    var overdue = 0
+    list.items.forEach { item ->
+        if (item.completed) return@forEach
+        pending += 1
+        val due = item.dueAt ?: return@forEach
+        if (due < now) overdue += 1
+        if (due <= now + 3 * 60 * 60_000L) urgent += 1
+    }
+    return Triple(pending, urgent, overdue)
+}
+
+private fun recordTodoEdit(context: Context, list: TodoList, note: String) {
+    val now = System.currentTimeMillis()
+    val hour = java.time.LocalDateTime.now().hour
+    val prefs = context.getSharedPreferences("cape_context", Context.MODE_PRIVATE)
+    val history = (prefs.getString(KEY_TODO_EDIT_HOURS, "") ?: "")
+        .split(',')
+        .mapNotNull { it.toIntOrNull() }
+        .filter { it in 0..23 }
+        .takeLast(19) + hour
+    val learned = history.groupingBy { it }.eachCount()
+        .entries
+        .filter { it.value >= 2 }
+        .sortedWith(compareByDescending<Map.Entry<Int, Int>> { it.value }.thenBy { it.key })
+        .map { it.key }
+        .take(3)
+    prefs.edit()
+        .putString(KEY_TODO_EDIT_HOURS, history.joinToString(","))
+        .putString(KEY_LEARNED_TODO_HOURS, learned.joinToString(","))
+        .putLong(KEY_LAST_TODO_EDIT_AT, now)
+        .apply()
+    val (pending, urgent, overdue) = todoPressure(list)
+    Thread {
+        runCatching {
+            GatewayClient().sendTodoUpdate(
+                pending = pending,
+                urgent = urgent,
+                overdue = overdue,
+                note = note,
+                timestamp = java.time.OffsetDateTime.now().toString()
+            )
+        }
+    }.start()
+}
+
+private fun parseTodoDueToday(value: String): Long? {
+    val time = runCatching { java.time.LocalTime.parse(value.trim()) }.getOrNull() ?: return null
+    return java.time.LocalDate.now()
+        .atTime(time)
+        .atZone(java.time.ZoneId.systemDefault())
+        .toInstant()
+        .toEpochMilli()
+}
+
+private fun todoMetaLabel(item: TodoItem): String {
+    val due = item.dueAt?.let {
+        java.time.Instant.ofEpochMilli(it)
+            .atZone(java.time.ZoneId.systemDefault())
+            .format(java.time.format.DateTimeFormatter.ofPattern("hh:mm a"))
+    } ?: "no due time"
+    return "${if (item.completed) "done" else "pending"} - due $due"
+}
+
+private fun parseTodoPromptTimes(value: String): List<String> =
+    value.split(',', ';')
+        .map { it.trim() }
+        .mapNotNull { raw -> runCatching { java.time.LocalTime.parse(raw) }.getOrNull()?.let { "%02d:%02d".format(it.hour, it.minute) } }
+        .distinct()
+        .take(4)
+
+private fun loadTodoPromptTimes(context: Context): List<String> {
+    val raw = context.getSharedPreferences("cape_context", Context.MODE_PRIVATE).getString(KEY_TODO_PROMPT_TIMES, "09:00") ?: "09:00"
+    return parseTodoPromptTimes(raw).ifEmpty { listOf("09:00") }
+}
+
+private fun saveTodoPromptTimes(context: Context, times: List<String>) {
+    context.getSharedPreferences("cape_context", Context.MODE_PRIVATE).edit()
+        .putString(KEY_TODO_PROMPT_TIMES, times.joinToString(","))
+        .apply()
+}
+
+private fun loadLearnedTodoHours(context: Context): List<Int> =
+    (context.getSharedPreferences("cape_context", Context.MODE_PRIVATE).getString(KEY_LEARNED_TODO_HOURS, "") ?: "")
+        .split(',')
+        .mapNotNull { it.toIntOrNull() }
+        .filter { it in 0..23 }
+        .distinct()
+
+private fun shouldPromptForTodoUpdate(context: Context, snapshot: ContextSnapshot): Boolean {
+    val prefs = context.getSharedPreferences("cape_context", Context.MODE_PRIVATE)
+    val today = java.time.LocalDate.now().toString()
+    val hour = snapshot.hourOfDay ?: java.time.LocalDateTime.now().hour
+    val minute = java.time.LocalDateTime.now().minute
+    val clock = "%02d:%02d".format(hour, minute)
+    val configured = loadTodoPromptTimes(context).any { time ->
+        val parsed = java.time.LocalTime.parse(time)
+        parsed.hour == hour && kotlin.math.abs(parsed.minute - minute) <= 10
+    }
+    val learned = loadLearnedTodoHours(context).contains(hour)
+    val morning = hour in 6..10
+    if (!configured && !learned && !morning) return false
+    val key = "${today}_$hour"
+    if (prefs.getString(KEY_LAST_TODO_PROMPT_KEY, "") == key) return false
+    return true
+}
+
+private fun markTodoPromptSeen(context: Context) {
+    val hour = java.time.LocalDateTime.now().hour
+    val today = java.time.LocalDate.now().toString()
+    context.getSharedPreferences("cape_context", Context.MODE_PRIVATE).edit()
+        .putString(KEY_LAST_TODO_PROMPT_KEY, "${today}_$hour")
+        .apply()
+}
+
+private fun maybeShowTodoPromptNotification(context: Context, snapshot: ContextSnapshot) {
+    if (!shouldPromptForTodoUpdate(context, snapshot)) return
+    markTodoPromptSeen(context)
+    val launch = PendingIntent.getActivity(
+        context,
+        4100,
+        Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )
+    val notification = NotificationCompat.Builder(context, COMMUTE_CHANNEL)
+        .setSmallIcon(R.mipmap.ic_launcher)
+        .setContentTitle("Update today's todo list?")
+        .setContentText("CAPE can use your todo pressure for safer decisions.")
+        .setContentIntent(launch)
+        .setAutoCancel(true)
+        .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+        .build()
+    runCatching { NotificationManagerCompat.from(context).notify(2400, notification) }
+}
+
+private fun recordDecisionApproval(context: Context, decision: CapeDecision, signal: String) {
+    val prefs = context.getSharedPreferences("cape_context", Context.MODE_PRIVATE)
+    val raw = prefs.getString(KEY_DECISION_APPROVAL_EVENTS, "[]") ?: "[]"
+    val events = runCatching { JSONArray(raw) }.getOrDefault(JSONArray())
+    events.put(
+        JSONObject()
+            .put("timestamp", java.time.OffsetDateTime.now().toString())
+            .put("packId", decision.packId)
+            .put("signal", signal)
+            .put("confidence", decision.confidence)
+            .put("actions", JSONArray(decision.actions))
+    )
+    val trimmed = JSONArray()
+    val start = (events.length() - 50).coerceAtLeast(0)
+    for (index in start until events.length()) trimmed.put(events.get(index))
+    prefs.edit().putString(KEY_DECISION_APPROVAL_EVENTS, trimmed.toString()).apply()
+}
+
 private fun savedPlaceLabel(context: Context, kind: String): String? {
     val raw = context.getSharedPreferences("cape_context", Context.MODE_PRIVATE).getString("saved_places", null) ?: return null
     return runCatching {
@@ -1805,28 +2140,6 @@ private fun savedPlaceLabel(context: Context, kind: String): String? {
         }
         null
     }.getOrNull()
-}
-
-private fun applyApprovedPackIfChanged(context: Context, decision: CapeDecision) {
-    if (decision.type != "APPLY_PACK" || decision.actions.isEmpty()) return
-    val signature = "${decision.packId}:${decision.actions.joinToString("|")}"
-    val prefs = context.getSharedPreferences("cape_context", Context.MODE_PRIVATE)
-    if (!prefs.getBoolean(KEY_AUTO_APPLY_ENABLED, false)) return
-    if (decision.safety?.status != null && decision.safety.status != "ok") return
-    if (prefs.getString("last_applied_pack_signature", "") == signature) return
-    val result = PackExecutor(context).apply(decision)
-    if (result.startsWith("Applied")) {
-        prefs.edit().putString("last_applied_pack_signature", signature).apply()
-    }
-}
-
-private fun applyDynamicThemeWallpaperIfChanged(context: Context, decision: CapeDecision) {
-    val action = wallpaperActionForDecision(decision) ?: return
-    val prefs = context.getSharedPreferences("cape_context", Context.MODE_PRIVATE)
-    if (prefs.getString(KEY_LAST_DYNAMIC_WALLPAPER, "") == action) return
-    if (PackExecutor(context).applyWallpaperAction(action)) {
-        prefs.edit().putString(KEY_LAST_DYNAMIC_WALLPAPER, action).apply()
-    }
 }
 
 private fun wallpaperActionForDecision(decision: CapeDecision): String? {
@@ -1890,6 +2203,21 @@ private data class DailyPlanItem(
     val endLabel: String
 )
 
+private data class TodoList(
+    val date: String,
+    val items: List<TodoItem>,
+    val updatedAt: Long
+)
+
+private data class TodoItem(
+    val id: String,
+    val title: String,
+    val dueAt: Long?,
+    val completed: Boolean,
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
 private data class PermissionState(
     val location: Boolean,
     val calendar: Boolean,
@@ -1908,10 +2236,20 @@ private enum class HomeSection(val label: String) {
 }
 
 private const val COMMUTE_CHANNEL = "cape_commute_alerts"
+private const val SERVICE_SYNC_INTERVAL_MS = 12 * 60_000L
+private const val ACTION_PAUSE_CAPE_SERVICE = "dev.rootcause.cape.PAUSE_SERVICE"
+private const val ACTION_STOP_CAPE_SERVICE = "dev.rootcause.cape.STOP_SERVICE"
 private const val KEY_COMMUTE_CACHE = "commute_plan_cache"
-private const val KEY_AUTO_APPLY_ENABLED = "auto_apply_enabled"
 private const val KEY_LAST_REFLECTION_DATE = "last_reflection_date"
 private const val KEY_LAST_DYNAMIC_WALLPAPER = "last_dynamic_wallpaper"
 private const val KEY_USER_ROLE = "user_role"
 private const val KEY_ROUTINE_START = "routine_start"
 private const val KEY_ROUTINE_END = "routine_end"
+private const val KEY_SERVICE_PAUSED_UNTIL = "service_paused_until"
+private const val KEY_DAY_TODOS = "day_todos"
+private const val KEY_TODO_PROMPT_TIMES = "todo_prompt_times"
+private const val KEY_LAST_TODO_PROMPT_KEY = "last_todo_prompt_key"
+private const val KEY_TODO_EDIT_HOURS = "todo_edit_hours"
+private const val KEY_LEARNED_TODO_HOURS = "learned_todo_update_hours"
+private const val KEY_LAST_TODO_EDIT_AT = "last_todo_edit_at"
+private const val KEY_DECISION_APPROVAL_EVENTS = "decision_approval_events"

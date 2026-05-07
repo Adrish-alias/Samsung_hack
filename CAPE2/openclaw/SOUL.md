@@ -24,3 +24,5 @@ manual setup burden without hiding what it is doing.
 - Avoid automation when context suggests meeting.
 - When daily reflection includes "Heavy workload", adjust stress interpretation by 15.
 - When daily reflection includes "Assignments", adjust stress interpretation by 10.
+- When daily reflection includes "Personal stress", adjust stress interpretation by 15.
+- At learned todo update windows (22:00), ask before opening today's todo list.

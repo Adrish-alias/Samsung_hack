@@ -25,10 +25,11 @@ async function buildCommutePlan(context) {
 
   try {
     const stressBuffer = context.sleepDebtMinutes >= 60 || context.meetingLoadToday >= 5 ? 15 : 8;
+    const departureEpoch = roundUpToFutureFiveMinutes(nowEpochSeconds());
     const route = await fetchRouteDetails({
       origin: normalizeLatLng(origin),
       destination,
-      departureIso: epochToIso(roundToNearestFiveMinutes(nowEpochSeconds())),
+      departureIso: epochToIso(departureEpoch),
       apiKey: process.env.GOOGLE_MAPS_API_KEY
     });
     const etaMinutes = Math.ceil(route.durationSeconds / 60);
@@ -63,7 +64,7 @@ async function buildCommutePlan(context) {
       mapsUrl: mapsUrl(origin, destination.label),
       routeDebug: {
         calls: 1,
-        roundedDepartureIso: epochToIso(roundToNearestFiveMinutes(nowEpochSeconds()))
+        roundedDepartureIso: epochToIso(departureEpoch)
       }
     };
   } catch (error) {
@@ -386,6 +387,10 @@ function nowEpochSeconds() {
 
 function roundToNearestFiveMinutes(epochSeconds) {
   return Math.round(epochSeconds / STEP_SECONDS) * STEP_SECONDS;
+}
+
+function roundUpToFutureFiveMinutes(epochSeconds) {
+  return Math.ceil((epochSeconds + 1) / STEP_SECONDS) * STEP_SECONDS;
 }
 
 function epochToIso(epochSeconds) {
