@@ -7,6 +7,12 @@ const DEFAULT_PORT = Number(process.env.CAPE_GATEWAY_PORT ?? 8787);
 const DEFAULT_HOST = process.env.CAPE_GATEWAY_HOST ?? '127.0.0.1';
 const MEMORY_DIR = process.env.OPENCLAW_CAPE_MEMORY_DIR ?? path.resolve(__dirname, '../../../openclaw/runtime');
 const OPENCLAW_MEMORY_DIR = process.env.OPENCLAW_CAPE_PROFILE_DIR ?? path.resolve(__dirname, '../../../openclaw/memory');
+const OPENCLAW_STATUS = {
+  required: String(process.env.OPENCLAW_REQUIRED ?? '').toLowerCase() === 'true',
+  baseUrl: process.env.OPENCLAW_BASE_URL ?? null,
+  agentId: process.env.OPENCLAW_AGENT_ID ?? 'cape',
+  method: process.env.OPENCLAW_AGENT_METHOD ?? 'agent'
+};
 
 function createServer(options = {}) {
   const runtimeDir = options.runtimeDir ?? MEMORY_DIR;
@@ -26,6 +32,13 @@ function createServer(options = {}) {
           ok: true,
           service: 'cape-gateway',
           version: '0.1.0'
+        });
+      }
+
+      if (req.method === 'GET' && req.url === '/v1/openclaw/status') {
+        return sendJson(res, 200, {
+          ok: true,
+          openclaw: OPENCLAW_STATUS
         });
       }
 

@@ -128,7 +128,10 @@ function buildContextPrompt(rawContext) {
   return [
     'You are the OpenClaw-owned CAPE multi-agent orchestrator.',
     'Run the CAPE agents in order: Context Intake, Routine Memory, Stress Scoring, Commute, Decision Orchestrator, Safety Permission, Pack Execution readiness.',
-    'Use the CAPE workspace files: SOUL.md, openclaw/memory/*.yaml, and openclaw/skills/*/SKILL.md.',
+    'You are running inside the user\'s OpenClaw workspace.',
+    'Use the workspace files: AGENTS.md, SOUL.md, TOOLS.md.',
+    'Use memory YAML: memory/*.yaml (e.g. memory/user_profile.yaml, memory/routine_patterns.yaml).',
+    'Use behavior packs: skills/*/SKILL.md.',
     'Return ONLY valid JSON with keys: decision, agentTrace, openclaw.',
     'The decision must match the Android CAPE schema: type, packId, stress, actions, suggestedActions, blockedByPermission, explanation, confidence, commutePlan, reasoningNote, safety.',
     'Raw Android context:',
@@ -139,7 +142,8 @@ function buildContextPrompt(rawContext) {
 function buildFeedbackPrompt(feedback) {
   return [
     'You are the OpenClaw-owned CAPE Feedback Learning Agent.',
-    'Update memory from this feedback using SOUL.md and openclaw/memory YAML conventions.',
+    'Update memory from this feedback using SOUL.md and memory/*.yaml conventions.',
+    'If a new user-respect rule is learned, append it to SOUL.md in plain English.',
     'Return ONLY valid JSON with keys: learning, openclaw.',
     'Feedback:',
     JSON.stringify(feedback, null, 2)

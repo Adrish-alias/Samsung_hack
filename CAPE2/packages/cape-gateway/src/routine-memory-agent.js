@@ -24,7 +24,7 @@ function createRoutineMemoryAgent(store) {
     };
   }
 
-  function rememberObservation(context, stress, commutePlan) {
+  function rememberObservation(context, stress, commutePlan, decision = null) {
     const snapshot = store.readAll();
     const profile = snapshot.profile;
     const routine = snapshot.routine;
@@ -36,6 +36,7 @@ function createRoutineMemoryAgent(store) {
     routine.routines.fatigue_windows ??= [];
     routine.routines.commute_patterns ??= [];
     routine.overrides = ensureOverrides(routine.overrides);
+    routine.runtime_state ??= {};
 
     profile.user ??= {};
     profile.user.timezone = context.timezone ?? profile.user.timezone;
@@ -61,6 +62,22 @@ function createRoutineMemoryAgent(store) {
 
     if (commutePlan && context.nextMeetingLocation) {
       updateCommutePattern(routine.routines.commute_patterns, context.nextMeetingLocation, commutePlan, context.currentTimeIso);
+    }
+
+    if (decision && typeof decision === 'object') {
+      if (decision.type === 'APPLY_PACK' && Array.isArray(decision.actions) && decision.actions.length > 0) {
+        routine.runtime_state.last_applied_pack_id = decision.packId ?? null;
+        routine.runtime_state.last_applied_at = context.currentTimeIso ?? new Date().toISOString();
+        routine.runtime_state.last_applied_actions = decision.actions.slice(0, 24);
+      }
+      if (Array.isArray(decision.actions)) {
+        if (decision.actions.includes('DND_ON')) {
+          routine.runtime_state.dnd_on_since = routine.runtime_state.dnd_on_since ?? (context.currentTimeIso ?? new Date().toISOString());
+        }
+        if (decision.actions.includes('DND_OFF')) {
+          routine.runtime_state.dnd_on_since = null;
+        }
+      }
     }
 
     store.writeProfile(profile);

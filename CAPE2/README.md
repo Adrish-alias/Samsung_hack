@@ -85,3 +85,46 @@ ollama/llama3.1:8b
 ```
 
 Keep secrets out of Git. Use `.env.example` as the template for local values.
+
+## Make OpenClaw the brain (hackathon mode)
+
+The CAPE gateway (`packages/cape-gateway`) can run in two modes:
+
+- **OpenClaw brain (recommended for hackathon)**: CAPE decisions are produced by a running OpenClaw Gateway runtime via `OPENCLAW_BASE_URL` + `OPENCLAW_TOKEN`.
+- **Local fallback**: if OpenClaw isn’t configured (or fails and `OPENCLAW_REQUIRED` is false), the gateway runs a local "OpenClaw-like" agent pipeline.
+
+To make it unambiguous that OpenClaw is the brain, run with `OPENCLAW_REQUIRED=true`.
+
+### 1) Install + start OpenClaw Gateway
+
+```bash
+npm install -g openclaw@latest
+openclaw onboard --install-daemon
+openclaw gateway --port 18789 --verbose
+```
+
+### 2) Bootstrap CAPE workspace files into OpenClaw
+
+```bash
+cd CAPE2
+node tools/openclaw-bootstrap.mjs
+```
+
+Dry-run:
+
+```bash
+node tools/openclaw-bootstrap.mjs --dry-run true
+```
+
+### 3) Start CAPE gateway in OpenClaw-required mode
+
+```bash
+cd CAPE2/packages/cape-gateway
+OPENCLAW_REQUIRED=true OPENCLAW_BASE_URL="http://127.0.0.1:18789" OPENCLAW_TOKEN="***" node src/server.js
+```
+
+Check status:
+
+```bash
+curl http://127.0.0.1:8787/v1/openclaw/status
+```

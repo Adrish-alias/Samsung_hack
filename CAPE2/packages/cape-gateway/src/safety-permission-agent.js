@@ -15,6 +15,7 @@ function createSafetyPermissionAgent() {
     const shouldSuggest = automationStyle === 'ask_when_uncertain' && decision.confidence < minimumConfidence;
     const learnedRejection = rejectionBias >= 0.6;
     const quietHoursBlocked = blocksQuietHours(context, decision);
+    const governor = evaluateGovernor(context, decision);
 
     const blockers = [];
     if (decision.blockedByPermission.length > 0) {
@@ -35,6 +36,9 @@ function createSafetyPermissionAgent() {
     if (quietHoursBlocked && !(requiredLocationPack && packId === 'commute_alert')) {
       blockers.push('quiet hours suppress this automation');
     }
+    if (governor.blockers.length > 0 && !requiredLocationPack) {
+      blockers.push(...governor.blockers);
+    }
 
     if (blockers.length > 0) {
       return {
@@ -48,6 +52,17 @@ function createSafetyPermissionAgent() {
           suggested: false
         },
         explanation: `Safety agent blocked ${packId}: ${blockers.join('; ')}.`
+      };
+    }
+
+    if (governor.overrideDecision) {
+      return {
+        ...governor.overrideDecision,
+        safety: {
+          status: 'ok',
+          blockers: [],
+          suggested: false
+        }
       };
     }
 
@@ -85,6 +100,77 @@ function createSafetyPermissionAgent() {
 module.exports = {
   createSafetyPermissionAgent
 };
+
+function evaluateGovernor(context, decision) {
+  const runtime = context.memory?.routine?.runtime_state ?? {};
+  const nowIso = context.currentTimeIso ?? new Date().toISOString();
+  const nowMs = parseIsoMs(nowIso);
+
+  const blockers = [];
+  if (decision.type === 'APPLY_PACK' && Array.isArray(decision.actions) && decision.actions.length > 0) {
+    const lastAppliedAtMs = parseIsoMs(runtime.last_applied_at);
+    const lastPackId = String(runtime.last_applied_pack_id ?? '');
+    const currentPack = String(decision.packId ?? '');
+    const globalCooldownMin = Number(context.memory?.profile?.preferences?.cooldown_minutes ?? 20);
+    const packCooldownMin = cooldownForPack(currentPack);
+
+    if (lastAppliedAtMs && nowMs && currentPack) {
+      const minutesSince = (nowMs - lastAppliedAtMs) / 60000;
+      if (minutesSince >= 0 && minutesSince < globalCooldownMin) {
+        blockers.push(`cooldown active (${Math.floor(minutesSince)}m < ${globalCooldownMin}m)`);
+      }
+      if (lastPackId === currentPack && minutesSince >= 0 && minutesSince < packCooldownMin) {
+        blockers.push(`pack cooldown active for ${currentPack} (${Math.floor(minutesSince)}m < ${packCooldownMin}m)`);
+      }
+    }
+  }
+
+  const dndSinceMs = parseIsoMs(runtime.dnd_on_since);
+  const maxDndMinutes = Number(context.memory?.profile?.preferences?.max_dnd_minutes ?? 90);
+  if (dndSinceMs && nowMs) {
+    const minutes = (nowMs - dndSinceMs) / 60000;
+    if (minutes >= maxDndMinutes) {
+      const hasDndPermission = Boolean(context.permissions?.notificationPolicyAccess);
+      if (hasDndPermission) {
+        return {
+          blockers: [],
+          overrideDecision: {
+            ...decision,
+            type: 'APPLY_PACK',
+            packId: 'failsafe_release_dnd',
+            confidence: 0.99,
+            actions: ['DND_OFF', 'RINGER_NORMAL'],
+            suggestedActions: [],
+            blockedByPermission: [],
+            explanation: `Failsafe: releasing DND after ${Math.floor(minutes)} minutes to prevent all-day silence.`,
+            reasoningNote: 'Safety governor forced DND release.',
+            safety: { status: 'ok', blockers: [], suggested: false }
+          }
+        };
+      }
+      blockers.push(`dnd_on_too_long(${Math.floor(minutes)}m) but notificationPolicyAccess missing`);
+    }
+  }
+
+  return { blockers, overrideDecision: null };
+}
+
+function cooldownForPack(packId) {
+  switch (String(packId)) {
+    case 'office_focus_high_stress': return 45;
+    case 'commute_alert': return 20;
+    case 'recovery_mode': return 45;
+    case 'home_evening': return 30;
+    default: return 30;
+  }
+}
+
+function parseIsoMs(value) {
+  if (!value) return null;
+  const parsed = new Date(String(value));
+  const ms = parsed.getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
 
 function isRequiredLocationPack(context, packId) {
   const location = String(context.locationState ?? '').toLowerCase();
