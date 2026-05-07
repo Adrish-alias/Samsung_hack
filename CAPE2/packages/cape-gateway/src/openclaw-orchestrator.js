@@ -289,7 +289,9 @@ function normalizeRemoteContextEvent(remote, runtimeClient) {
   const session = createSession('context_decision');
   const decision = remote.decision;
   if (!decision) throw new Error('openclaw_response_missing_decision');
-  const agentTrace = Array.isArray(remote.agentTrace) ? remote.agentTrace : [];
+  const agentTrace = Array.isArray(remote.agentTrace) && remote.agentTrace.length > 0
+    ? remote.agentTrace
+    : synthesizeRemoteContextTrace(remote);
   const event = finishSession({ ...session, agentTrace }, {
     kind: 'context_decision',
     context: remote.context ?? {},
@@ -318,7 +320,9 @@ function normalizeRemoteFeedbackEvent(remote, feedback, runtimeClient) {
   const session = createSession('feedback');
   const learning = remote.learning;
   if (!learning) throw new Error('openclaw_response_missing_learning');
-  const agentTrace = Array.isArray(remote.agentTrace) ? remote.agentTrace : [];
+  const agentTrace = Array.isArray(remote.agentTrace) && remote.agentTrace.length > 0
+    ? remote.agentTrace
+    : synthesizeRemoteFeedbackTrace(remote, feedback);
   const event = finishSession({ ...session, agentTrace }, {
     kind: 'feedback',
     feedback,
@@ -361,6 +365,44 @@ function persistSession(runtimeDir, event) {
   fs.writeFileSync(path.join(runtimeDir, 'latest-summary.md'), renderSummary(event));
   fs.writeFileSync(path.join(runtimeDir, 'latest-session.md'), renderSession(event));
   fs.writeFileSync(path.join(runtimeDir, 'sessions', `${event.sessionId}.json`), JSON.stringify(event, null, 2));
+}
+
+function synthesizeRemoteContextTrace(remote) {
+  const decision = remote.decision ?? {};
+  const context = remote.context ?? {};
+  return [
+    {
+      agent: 'openclaw-context-intake',
+      status: 'remote',
+      output: `Received ${Object.keys(context).length || 'available'} normalized context fields`
+    },
+    {
+      agent: 'openclaw-decision',
+      status: decision.type ?? 'remote',
+      output: `${decision.packId ?? 'unknown_pack'} with ${(decision.actions ?? []).length} actions`
+    },
+    {
+      agent: 'openclaw-memory',
+      status: 'recorded',
+      output: `Session ${remote.openclaw?.sessionId ?? 'remote'} persisted to CAPE runtime`
+    }
+  ];
+}
+
+function synthesizeRemoteFeedbackTrace(remote, feedback) {
+  const learned = remote.learning?.updated?.learned ?? [];
+  return [
+    {
+      agent: 'openclaw-feedback-learning',
+      status: 'remote',
+      output: `Processed ${feedback.type ?? feedback.signal ?? 'feedback'} for ${feedback.packId ?? 'unknown_pack'}`
+    },
+    {
+      agent: 'openclaw-memory',
+      status: learned.length > 0 ? 'updated' : 'recorded',
+      output: learned.join(', ') || 'No new rule, feedback still recorded'
+    }
+  ];
 }
 
 function renderSummary(event) {

@@ -30,6 +30,8 @@ function createContextIntakeAgent(options = {}) {
       taskFragmentationScore: asInt(rawContext.taskFragmentationScore ?? rawContext.appSwitchCountLast30Min, 0, 200),
       focusDropScore: asInt(rawContext.focusDropScore ?? rawContext.screenUnlockCountLast30Min, 0, 200),
       nextMeetingMinutes,
+      nextMeetingStartEpochMs: asOptionalInt(rawContext.nextMeetingStartEpochMs, 0, Number.MAX_SAFE_INTEGER),
+      nextMeetingEndEpochMs: asOptionalInt(rawContext.nextMeetingEndEpochMs, 0, Number.MAX_SAFE_INTEGER),
       nextMeetingLocation: asNullableText(rawContext.nextMeetingLocation ?? rawContext.destination),
       nextMeetingTitle: asNullableText(rawContext.nextMeetingTitle),
       currentLocation,

@@ -14,6 +14,7 @@ data class ContextSnapshot(
     val implicitWorkload: String = "LOW",
     val nextMeetingMinutes: Int?,
     val nextMeetingStartEpochMs: Long? = null,
+    val nextMeetingEndEpochMs: Long? = null,
     val nextMeetingLocation: String?,
     val currentLatitude: Double?,
     val currentLongitude: Double?,

@@ -39,6 +39,11 @@ class DecisionOrchestrator(
             confidence = pack.confidence,
             commutePlan = null,
             reasoningNote = null,
+            agentTrace = listOf(
+                AgentTraceItem("android-context", "ok", "Collected location=${context.locationState}, meetings=${context.meetingLoadToday}, todos=${context.todoPendingCount}"),
+                AgentTraceItem("android-stress", stress.level.lowercase(), "Scored ${stress.score}/100 from ${stress.reasons.joinToString().ifBlank { "baseline signals" }}"),
+                AgentTraceItem("android-decision", if (blocked.isEmpty()) "ready" else "blocked", "Selected ${pack.id} with ${pack.actions.size} candidate actions")
+            ),
             openclaw = null
         )
     }

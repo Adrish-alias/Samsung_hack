@@ -82,6 +82,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.app.RemoteInput
 import androidx.core.content.ContextCompat
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.MapView
@@ -94,6 +95,7 @@ import dev.rootcause.cape.core.ContextCollectionResult
 import dev.rootcause.cape.core.ContextSnapshot
 import dev.rootcause.cape.core.DecisionOrchestrator
 import dev.rootcause.cape.core.SavedPlace
+import dev.rootcause.cape.core.StressResult
 import dev.rootcause.cape.execution.PackExecutor
 import dev.rootcause.cape.gateway.GatewayClient
 import dev.rootcause.cape.sensing.ContextCollector
@@ -175,6 +177,7 @@ class MainActivity : ComponentActivity() {
 class CapeSyncService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private var lastStressScore = 0
+    private var hasScheduledSync = false
     private val syncRunnable = object : Runnable {
         override fun run() {
             Thread {
@@ -225,8 +228,10 @@ class CapeSyncService : Service() {
                     showStressNotification(applicationContext, decision.stress.score, decision.stress.level)
                 }
                 lastStressScore = decision.stress.score
+                maybeShowContextModePrompt(applicationContext, snapshot)
                 maybeShowTodoPromptNotification(applicationContext, snapshot)
             }.start()
+            hasScheduledSync = true
             handler.postDelayed(this, SERVICE_SYNC_INTERVAL_MS)
         }
     }
@@ -255,13 +260,16 @@ class CapeSyncService : Service() {
             return START_STICKY
         }
         startForeground(2001, serviceNotification())
-        handler.removeCallbacks(syncRunnable)
-        handler.post(syncRunnable)
+        if (!hasScheduledSync) {
+            handler.removeCallbacks(syncRunnable)
+            handler.post(syncRunnable)
+        }
         return START_STICKY
     }
 
     override fun onDestroy() {
         handler.removeCallbacks(syncRunnable)
+        hasScheduledSync = false
         super.onDestroy()
     }
 
@@ -276,6 +284,63 @@ class CapeSyncService : Service() {
         .addAction(0, "Pause", PendingIntent.getService(this, 3001, Intent(this, CapeSyncService::class.java).setAction(ACTION_PAUSE_CAPE_SERVICE), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
         .addAction(0, "Stop", PendingIntent.getService(this, 3002, Intent(this, CapeSyncService::class.java).setAction(ACTION_STOP_CAPE_SERVICE), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
         .build()
+}
+
+class CapeActionReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        when (intent.action) {
+            ACTION_APPLY_MODE -> {
+                val packId = intent.getStringExtra(EXTRA_PACK_ID) ?: return
+                val actions = intent.getStringArrayListExtra(EXTRA_ACTIONS).orEmpty()
+                val decision = CapeDecision(
+                    type = "APPLY_PACK",
+                    packId = packId,
+                    stress = StressResult(0, "USER_APPROVED", emptyList()),
+                    actions = actions,
+                    blockedByPermission = emptyList(),
+                    explanation = "Applied from CAPE notification.",
+                    confidence = 1.0
+                )
+                val status = PackExecutor(context.applicationContext).apply(decision)
+                recordNotificationDecision(context, packId, "accepted", status, actions)
+                dismissNotification(context, intent.getIntExtra(EXTRA_NOTIFICATION_ID, 0))
+            }
+            ACTION_REJECT_MODE -> {
+                val packId = intent.getStringExtra(EXTRA_PACK_ID) ?: "unknown"
+                recordNotificationDecision(context, packId, "rejected", "Rejected from CAPE notification.")
+                dismissNotification(context, intent.getIntExtra(EXTRA_NOTIFICATION_ID, 0))
+            }
+            ACTION_TODO_QUICK_ADD -> {
+                val reply = RemoteInput.getResultsFromIntent(intent)
+                    ?.getCharSequence(KEY_TODO_REMOTE_INPUT)
+                    ?.toString()
+                    ?.trim()
+                    .orEmpty()
+                if (reply.isNotBlank()) {
+                    val list = loadTodoList(context)
+                    val now = System.currentTimeMillis()
+                    val item = TodoItem(
+                        id = "todo_$now",
+                        title = reply,
+                        startAt = now,
+                        endAt = null,
+                        completed = false,
+                        createdAt = now,
+                        updatedAt = now
+                    )
+                    val updated = ensureTodayTodoList(list).copy(items = ensureTodayTodoList(list).items + item, updatedAt = now)
+                    saveTodoList(context, updated)
+                    recordTodoEdit(context, updated, "quick_added:$reply")
+                    markTodoPromptSeen(context)
+                }
+                dismissNotification(context, TODO_PROMPT_NOTIFICATION_ID)
+            }
+            ACTION_TODO_DISMISS -> {
+                markTodoPromptSeen(context)
+                dismissNotification(context, TODO_PROMPT_NOTIFICATION_ID)
+            }
+        }
+    }
 }
 
 @Composable
@@ -392,8 +457,6 @@ private fun HomeShell(onRequestRuntimePermissions: () -> Unit) {
     var pendingApproval by remember { mutableStateOf<CapeDecision?>(null) }
     var showReflection by remember { mutableStateOf(false) }
     var reflectionStatus by remember { mutableStateOf("") }
-    var showTodoPrompt by remember { mutableStateOf(shouldPromptForTodoUpdate(context, collection.snapshot)) }
-    var forceTodoEditor by remember { mutableStateOf(false) }
 
     fun syncOnce() {
         Thread {
@@ -487,9 +550,8 @@ private fun HomeShell(onRequestRuntimePermissions: () -> Unit) {
                 }
                 saveCommuteCache(context, cache)
                 decision = updated
-                if (shouldPromptForTodoUpdate(context, fresh.snapshot)) {
-                    showTodoPrompt = true
-                }
+                maybeShowContextModePrompt(context, fresh.snapshot)
+                maybeShowTodoPromptNotification(context, fresh.snapshot)
                 if (shouldShowReflection(previousLocation, fresh.snapshot, prefs)) {
                     showReflection = true
                 }
@@ -522,10 +584,7 @@ private fun HomeShell(onRequestRuntimePermissions: () -> Unit) {
 
     LaunchedEffect(Unit) {
         startCapeSyncService(context)
-        while (true) {
-            syncOnce()
-            delay(60_000)
-        }
+        syncOnce()
     }
 
     Column(
@@ -596,11 +655,7 @@ private fun HomeShell(onRequestRuntimePermissions: () -> Unit) {
                 feedbackStatus = feedbackStatus
             )
             HomeSection.Profile -> ProfileSection(collection.snapshot)
-            HomeSection.Plan -> TodoSection(
-                snapshot = collection.snapshot,
-                forceEditor = forceTodoEditor,
-                onEditorConsumed = { forceTodoEditor = false }
-            )
+            HomeSection.Plan -> TodoSection(snapshot = collection.snapshot)
         }
     }
     pendingApproval?.let { approvalDecision ->
@@ -626,20 +681,6 @@ private fun HomeShell(onRequestRuntimePermissions: () -> Unit) {
                     "Rejected by user; no device changes applied."
                 }
                 pendingApproval = null
-            }
-        )
-    }
-    if (showTodoPrompt) {
-        TodoPromptDialog(
-            onDismiss = {
-                markTodoPromptSeen(context)
-                showTodoPrompt = false
-            },
-            onOpen = {
-                markTodoPromptSeen(context)
-                showTodoPrompt = false
-                forceTodoEditor = true
-                selectedSection = HomeSection.Plan
             }
         )
     }
@@ -698,22 +739,6 @@ private fun ApprovalDialog(
         },
         dismissButton = {
             OutlinedButton(onClick = { onDecision(false) }) { Text("NO") }
-        },
-        containerColor = Glass
-    )
-}
-
-@Composable
-private fun TodoPromptDialog(onDismiss: () -> Unit, onOpen: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Do you want to update today's todo list?") },
-        text = { Text("CAPE uses this to understand workload pressure and plan gentler decisions.", color = CapeMuted) },
-        confirmButton = {
-            Button(onClick = onOpen) { Text("YES") }
-        },
-        dismissButton = {
-            OutlinedButton(onClick = onDismiss) { Text("NO") }
         },
         containerColor = Glass
     )
@@ -1135,24 +1160,17 @@ private fun ProfileSection(snapshot: ContextSnapshot) {
 
 @Composable
 private fun TodoSection(
-    snapshot: ContextSnapshot,
-    forceEditor: Boolean,
-    onEditorConsumed: () -> Unit
+    snapshot: ContextSnapshot
 ) {
     val context = LocalContext.current
     var list by remember { mutableStateOf(loadTodoList(context)) }
     var draftTitle by remember { mutableStateOf("") }
-    var draftDue by remember { mutableStateOf("") }
+    var draftStart by remember { mutableStateOf(java.time.LocalTime.now().withSecond(0).withNano(0).toString().take(5)) }
+    var draftEnd by remember { mutableStateOf("") }
+    var editingId by remember { mutableStateOf<String?>(null) }
     var updateTimes by remember { mutableStateOf(loadTodoPromptTimes(context)) }
     var timeDraft by remember { mutableStateOf(updateTimes.joinToString(",")) }
     var status by remember { mutableStateOf("") }
-
-    LaunchedEffect(forceEditor) {
-        if (forceEditor) {
-            status = "Update today's todos."
-            onEditorConsumed()
-        }
-    }
 
     GlassCard {
         Text("Day Todo", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -1180,32 +1198,65 @@ private fun TodoSection(
                     label = { Text(if (item.completed) "Done" else "Open") }
                 )
             }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = {
+                    editingId = item.id
+                    draftTitle = item.title
+                    draftStart = formatTodoClock(item.startAt) ?: java.time.LocalTime.now().toString().take(5)
+                    draftEnd = formatTodoClock(item.endAt) ?: ""
+                    status = "Editing ${item.title}"
+                }) { Text("Update") }
+                OutlinedButton(onClick = {
+                    list = list.copy(items = list.items.filterNot { it.id == item.id }, updatedAt = System.currentTimeMillis())
+                    saveTodoList(context, list)
+                    recordTodoEdit(context, list, "removed:${item.title}")
+                    if (editingId == item.id) editingId = null
+                    status = "Todo removed."
+                }) { Text("Remove") }
+            }
         }
         OutlinedTextField(value = draftTitle, onValueChange = { draftTitle = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Todo") })
-        OutlinedTextField(value = draftDue, onValueChange = { draftDue = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Due time HH:mm optional") })
+        ClockTimeField(label = "Start time", value = draftStart, onChange = { draftStart = it })
+        ClockTimeField(label = "End time optional", value = draftEnd, optional = true, onChange = { draftEnd = it })
         Button(
             onClick = {
                 val title = draftTitle.trim()
                 if (title.isBlank()) return@Button
+                val startAt = parseTodoTimeToday(draftStart)
+                if (startAt == null) {
+                    status = "Start time is required."
+                    return@Button
+                }
+                val endAt = parseTodoTimeToday(draftEnd)
                 val now = System.currentTimeMillis()
                 val item = TodoItem(
-                    id = "todo_${now}",
+                    id = editingId ?: "todo_${now}",
                     title = title,
-                    dueAt = parseTodoDueToday(draftDue),
+                    startAt = startAt,
+                    endAt = endAt,
                     completed = false,
                     createdAt = now,
                     updatedAt = now
                 )
-                list = ensureTodayTodoList(list).copy(items = ensureTodayTodoList(list).items + item, updatedAt = now)
+                val todayList = ensureTodayTodoList(list)
+                list = if (editingId == null) {
+                    todayList.copy(items = todayList.items + item, updatedAt = now)
+                } else {
+                    todayList.copy(items = todayList.items.map { existing ->
+                        if (existing.id == editingId) item.copy(createdAt = existing.createdAt, completed = existing.completed) else existing
+                    }, updatedAt = now)
+                }
                 saveTodoList(context, list)
-                recordTodoEdit(context, list, "added:$title")
+                recordTodoEdit(context, list, if (editingId == null) "added:$title" else "updated:$title")
                 draftTitle = ""
-                draftDue = ""
+                draftStart = java.time.LocalTime.now().withSecond(0).withNano(0).toString().take(5)
+                draftEnd = ""
+                editingId = null
                 status = "Todo saved and sent to OpenClaw."
             },
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(containerColor = CapeAccent)
-        ) { Text("Add Todo") }
+        ) { Text(if (editingId == null) "Add Todo" else "Update Todo") }
         OutlinedTextField(value = timeDraft, onValueChange = { timeDraft = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Prompt times, comma-separated HH:mm") })
         Button(
             onClick = {
@@ -1430,6 +1481,46 @@ private fun GlassCard(
 }
 
 @Composable
+private fun ClockTimeField(
+    label: String,
+    value: String,
+    optional: Boolean = false,
+    onChange: (String) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text(label, fontWeight = FontWeight.SemiBold)
+            if (optional) TextButton(onClick = { onChange("") }) { Text("Clear") }
+        }
+        OutlinedTextField(
+            value = value,
+            onValueChange = onChange,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("HH:mm") }
+        )
+        AndroidView(
+            modifier = Modifier.fillMaxWidth().height(160.dp),
+            factory = { ctx ->
+                android.widget.TimePicker(ctx).apply {
+                    setIs24HourView(true)
+                    val parsed = runCatching { java.time.LocalTime.parse(value.ifBlank { "09:00" }) }.getOrDefault(java.time.LocalTime.of(9, 0))
+                    hour = parsed.hour
+                    minute = parsed.minute
+                    setOnTimeChangedListener { _, h, m -> onChange("%02d:%02d".format(h, m)) }
+                }
+            },
+            update = { picker ->
+                val parsed = runCatching { java.time.LocalTime.parse(value.ifBlank { "09:00" }) }.getOrNull()
+                if (parsed != null && (picker.hour != parsed.hour || picker.minute != parsed.minute)) {
+                    picker.hour = parsed.hour
+                    picker.minute = parsed.minute
+                }
+            }
+        )
+    }
+}
+
+@Composable
 private fun MetricRow(label: String, value: String) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(label, color = CapeMuted, modifier = Modifier.weight(1f))
@@ -1561,6 +1652,86 @@ private fun showLateNotification(context: Context, destination: String) {
         .setAutoCancel(true)
         .build()
     NotificationManagerCompat.from(context).notify(1003, notification)
+}
+
+private fun maybeShowContextModePrompt(context: Context, snapshot: ContextSnapshot) {
+    val now = System.currentTimeMillis()
+    val meetingStart = snapshot.nextMeetingStartEpochMs
+    val meetingEnd = snapshot.nextMeetingEndEpochMs
+    val mode = when {
+        meetingStart != null && meetingEnd != null && now in meetingStart..meetingEnd -> ModePrompt(
+            key = "meeting_${meetingStart}",
+            packId = "office_focus_high_stress",
+            title = "Meeting in progress",
+            body = "Apply focus mode until this meeting ends?",
+            actions = listOf("DND_ON", "RINGER_VIBRATE", "BRIGHTNESS_40", "WALLPAPER_FOCUS")
+        )
+        snapshot.locationState == "home" || snapshot.locationState == "relaxing" -> ModePrompt(
+            key = "relax_${java.time.LocalDate.now()}_${snapshot.hourOfDay}",
+            packId = "home_evening",
+            title = "You are home",
+            body = "Apply relax mode now?",
+            actions = listOf("DND_OFF", "RINGER_NORMAL", "BRIGHTNESS_AUTO", "WALLPAPER_RELAX")
+        )
+        snapshot.locationState == "commuting" -> ModePrompt(
+            key = "commute_${java.time.LocalDate.now()}_${snapshot.hourOfDay}",
+            packId = "commute_alert",
+            title = "Commute detected",
+            body = "Apply commute mode now?",
+            actions = listOf("DND_OFF", "RINGER_NORMAL", "BRIGHTNESS_65", "WALLPAPER_COMMUTE")
+        )
+        else -> null
+    } ?: return
+    if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
+    val prefs = context.getSharedPreferences("cape_context", Context.MODE_PRIVATE)
+    val prefKey = "mode_prompt_${mode.key}"
+    if (prefs.getBoolean(prefKey, false)) return
+    prefs.edit().putBoolean(prefKey, true).apply()
+    showModePromptNotification(context, mode)
+}
+
+private fun showModePromptNotification(context: Context, prompt: ModePrompt) {
+    recordNotificationEvent(context)
+    val notificationId = MODE_PROMPT_BASE_ID + kotlin.math.abs(prompt.key.hashCode() % 1000)
+    val yesIntent = Intent(context, CapeActionReceiver::class.java)
+        .setAction(ACTION_APPLY_MODE)
+        .putExtra(EXTRA_PACK_ID, prompt.packId)
+        .putStringArrayListExtra(EXTRA_ACTIONS, ArrayList(prompt.actions))
+        .putExtra(EXTRA_NOTIFICATION_ID, notificationId)
+    val noIntent = Intent(context, CapeActionReceiver::class.java)
+        .setAction(ACTION_REJECT_MODE)
+        .putExtra(EXTRA_PACK_ID, prompt.packId)
+        .putExtra(EXTRA_NOTIFICATION_ID, notificationId)
+    val notification = NotificationCompat.Builder(context, COMMUTE_CHANNEL)
+        .setSmallIcon(R.mipmap.ic_launcher)
+        .setContentTitle(prompt.title)
+        .setContentText(prompt.body)
+        .setStyle(NotificationCompat.BigTextStyle().bigText(prompt.body))
+        .setPriority(NotificationCompat.PRIORITY_HIGH)
+        .setAutoCancel(true)
+        .addAction(0, "Yes", PendingIntent.getBroadcast(context, notificationId + 10_000, yesIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+        .addAction(0, "No", PendingIntent.getBroadcast(context, notificationId + 20_000, noIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+        .build()
+    NotificationManagerCompat.from(context).notify(notificationId, notification)
+}
+
+private fun recordNotificationDecision(context: Context, packId: String, signal: String, note: String, actions: List<String> = emptyList()) {
+    Thread {
+        runCatching {
+            GatewayClient().sendDecisionApproval(
+                packId = packId,
+                signal = signal,
+                note = note,
+                actions = actions,
+                confidence = 1.0
+            )
+        }
+    }.start()
+}
+
+private fun dismissNotification(context: Context, id: Int) {
+    if (id <= 0) return
+    runCatching { NotificationManagerCompat.from(context).cancel(id) }
 }
 
 private fun decodePolyline(encoded: String): List<LatLng> {
@@ -1835,7 +2006,8 @@ private fun generateDailyPlan(context: Context, snapshot: ContextSnapshot): List
     val meetingStart = snapshot.nextMeetingStartEpochMs
     if (meetingStart != null && meetingStart >= System.currentTimeMillis()) {
         val title = snapshot.nextMeetingTitle ?: "Pending meeting"
-        items.add(planItem(title, snapshot.nextMeetingLocation ?: "calendar", meetingStart, meetingStart + 60 * 60_000L, zone))
+        val meetingEnd = snapshot.nextMeetingEndEpochMs?.takeIf { it > meetingStart } ?: meetingStart + 60 * 60_000L
+        items.add(planItem(title, snapshot.nextMeetingLocation ?: "calendar", meetingStart, meetingEnd, zone))
     }
     return items.distinctBy { it.id }.sortedBy { it.startEpochMs }
 }
@@ -1932,7 +2104,8 @@ private fun loadTodoList(context: Context): TodoList {
                 TodoItem(
                     id = item.optString("id"),
                     title = item.optString("title"),
-                    dueAt = item.optLong("dueAt").takeIf { it > 0L },
+                    startAt = item.optLong("startAt", item.optLong("dueAt", 0L)).takeIf { it > 0L },
+                    endAt = item.optLong("endAt").takeIf { it > 0L },
                     completed = item.optBoolean("completed"),
                     createdAt = item.optLong("createdAt"),
                     updatedAt = item.optLong("updatedAt")
@@ -1942,11 +2115,30 @@ private fun loadTodoList(context: Context): TodoList {
         )
     }.getOrDefault(TodoList(today, emptyList(), System.currentTimeMillis()))
         .let { ensureTodayTodoList(it) }
+        .let { current ->
+            val completed = autoCompleteExpiredTodos(current)
+            if (completed != current) saveTodoList(context, completed)
+            completed
+        }
 }
 
 private fun ensureTodayTodoList(list: TodoList): TodoList {
     val today = java.time.LocalDate.now().toString()
     return if (list.date == today) list else TodoList(today, emptyList(), System.currentTimeMillis())
+}
+
+private fun autoCompleteExpiredTodos(list: TodoList): TodoList {
+    val now = System.currentTimeMillis()
+    var changed = false
+    val items = list.items.map { item ->
+        if (!item.completed && item.endAt != null && item.endAt < now) {
+            changed = true
+            item.copy(completed = true, updatedAt = now)
+        } else {
+            item
+        }
+    }
+    return if (changed) list.copy(items = items, updatedAt = now) else list
 }
 
 private fun saveTodoList(context: Context, list: TodoList) {
@@ -1959,7 +2151,8 @@ private fun saveTodoList(context: Context, list: TodoList) {
                 JSONObject()
                     .put("id", item.id)
                     .put("title", item.title)
-                    .put("dueAt", item.dueAt)
+                    .put("startAt", item.startAt)
+                    .put("endAt", item.endAt)
                     .put("completed", item.completed)
                     .put("createdAt", item.createdAt)
                     .put("updatedAt", item.updatedAt)
@@ -1978,9 +2171,9 @@ private fun todoPressure(list: TodoList): Triple<Int, Int, Int> {
     list.items.forEach { item ->
         if (item.completed) return@forEach
         pending += 1
-        val due = item.dueAt ?: return@forEach
-        if (due < now) overdue += 1
-        if (due <= now + 3 * 60 * 60_000L) urgent += 1
+        val start = item.startAt ?: return@forEach
+        if (start < now) overdue += 1
+        if (start <= now + 3 * 60 * 60_000L) urgent += 1
     }
     return Triple(pending, urgent, overdue)
 }
@@ -2019,7 +2212,7 @@ private fun recordTodoEdit(context: Context, list: TodoList, note: String) {
     }.start()
 }
 
-private fun parseTodoDueToday(value: String): Long? {
+private fun parseTodoTimeToday(value: String): Long? {
     val time = runCatching { java.time.LocalTime.parse(value.trim()) }.getOrNull() ?: return null
     return java.time.LocalDate.now()
         .atTime(time)
@@ -2028,13 +2221,26 @@ private fun parseTodoDueToday(value: String): Long? {
         .toEpochMilli()
 }
 
+private fun formatTodoClock(value: Long?): String? =
+    value?.let {
+        java.time.Instant.ofEpochMilli(it)
+            .atZone(java.time.ZoneId.systemDefault())
+            .toLocalTime()
+            .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
+    }
+
 private fun todoMetaLabel(item: TodoItem): String {
-    val due = item.dueAt?.let {
+    val start = item.startAt?.let {
         java.time.Instant.ofEpochMilli(it)
             .atZone(java.time.ZoneId.systemDefault())
             .format(java.time.format.DateTimeFormatter.ofPattern("hh:mm a"))
-    } ?: "no due time"
-    return "${if (item.completed) "done" else "pending"} - due $due"
+    } ?: "no start time"
+    val end = item.endAt?.let {
+        java.time.Instant.ofEpochMilli(it)
+            .atZone(java.time.ZoneId.systemDefault())
+            .format(java.time.format.DateTimeFormatter.ofPattern("hh:mm a"))
+    }
+    return "${if (item.completed) "done" else "pending"} - $start${end?.let { " to $it" } ?: ""}"
 }
 
 private fun parseTodoPromptTimes(value: String): List<String> =
@@ -2090,22 +2296,26 @@ private fun markTodoPromptSeen(context: Context) {
 
 private fun maybeShowTodoPromptNotification(context: Context, snapshot: ContextSnapshot) {
     if (!shouldPromptForTodoUpdate(context, snapshot)) return
-    markTodoPromptSeen(context)
-    val launch = PendingIntent.getActivity(
-        context,
-        4100,
-        Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
-        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-    )
+    val remoteInput = RemoteInput.Builder(KEY_TODO_REMOTE_INPUT)
+        .setLabel("Todo title")
+        .build()
+    val addIntent = Intent(context, CapeActionReceiver::class.java).setAction(ACTION_TODO_QUICK_ADD)
+    val dismissIntent = Intent(context, CapeActionReceiver::class.java).setAction(ACTION_TODO_DISMISS)
+    val addAction = NotificationCompat.Action.Builder(0, "Add", PendingIntent.getBroadcast(context, 4101, addIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE))
+        .addRemoteInput(remoteInput)
+        .setAllowGeneratedReplies(true)
+        .build()
     val notification = NotificationCompat.Builder(context, COMMUTE_CHANNEL)
         .setSmallIcon(R.mipmap.ic_launcher)
-        .setContentTitle("Update today's todo list?")
-        .setContentText("CAPE can use your todo pressure for safer decisions.")
-        .setContentIntent(launch)
+        .setContentTitle("Update today's todo list")
+        .setContentText("Add a quick todo from here or dismiss for now.")
+        .setStyle(NotificationCompat.BigTextStyle().bigText("Add a quick todo from this notification. More detailed start/end scheduling is available when you open CAPE."))
         .setAutoCancel(true)
-        .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+        .setPriority(NotificationCompat.PRIORITY_HIGH)
+        .addAction(addAction)
+        .addAction(0, "No", PendingIntent.getBroadcast(context, 4102, dismissIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
         .build()
-    runCatching { NotificationManagerCompat.from(context).notify(2400, notification) }
+    runCatching { NotificationManagerCompat.from(context).notify(TODO_PROMPT_NOTIFICATION_ID, notification) }
 }
 
 private fun recordDecisionApproval(context: Context, decision: CapeDecision, signal: String) {
@@ -2212,10 +2422,19 @@ private data class TodoList(
 private data class TodoItem(
     val id: String,
     val title: String,
-    val dueAt: Long?,
+    val startAt: Long?,
+    val endAt: Long?,
     val completed: Boolean,
     val createdAt: Long,
     val updatedAt: Long
+)
+
+private data class ModePrompt(
+    val key: String,
+    val packId: String,
+    val title: String,
+    val body: String,
+    val actions: List<String>
 )
 
 private data class PermissionState(
@@ -2239,6 +2458,16 @@ private const val COMMUTE_CHANNEL = "cape_commute_alerts"
 private const val SERVICE_SYNC_INTERVAL_MS = 12 * 60_000L
 private const val ACTION_PAUSE_CAPE_SERVICE = "dev.rootcause.cape.PAUSE_SERVICE"
 private const val ACTION_STOP_CAPE_SERVICE = "dev.rootcause.cape.STOP_SERVICE"
+private const val ACTION_APPLY_MODE = "dev.rootcause.cape.APPLY_MODE"
+private const val ACTION_REJECT_MODE = "dev.rootcause.cape.REJECT_MODE"
+private const val ACTION_TODO_QUICK_ADD = "dev.rootcause.cape.TODO_QUICK_ADD"
+private const val ACTION_TODO_DISMISS = "dev.rootcause.cape.TODO_DISMISS"
+private const val EXTRA_PACK_ID = "pack_id"
+private const val EXTRA_ACTIONS = "actions"
+private const val EXTRA_NOTIFICATION_ID = "notification_id"
+private const val KEY_TODO_REMOTE_INPUT = "todo_remote_input"
+private const val TODO_PROMPT_NOTIFICATION_ID = 2400
+private const val MODE_PROMPT_BASE_ID = 3300
 private const val KEY_COMMUTE_CACHE = "commute_plan_cache"
 private const val KEY_LAST_REFLECTION_DATE = "last_reflection_date"
 private const val KEY_LAST_DYNAMIC_WALLPAPER = "last_dynamic_wallpaper"

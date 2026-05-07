@@ -36,5 +36,8 @@
             android:name=".CapeSyncService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+        <receiver
+            android:name=".CapeActionReceiver"
+            android:exported="false" />
     </application>
 </manifest>

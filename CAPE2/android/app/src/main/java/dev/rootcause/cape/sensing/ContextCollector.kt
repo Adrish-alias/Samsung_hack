@@ -64,6 +64,7 @@ class ContextCollector(private val context: Context) {
             implicitWorkload = implicitWorkload,
             nextMeetingMinutes = meetingStats.nextMeetingMinutes,
             nextMeetingStartEpochMs = meetingStats.nextMeetingStartEpochMs,
+            nextMeetingEndEpochMs = meetingStats.nextMeetingEndEpochMs,
             nextMeetingLocation = meetingStats.nextMeetingLocation,
             currentLatitude = locationReading.latitude,
             currentLongitude = locationReading.longitude,
@@ -115,7 +116,7 @@ class ContextCollector(private val context: Context) {
     private fun readMeetings(notes: MutableList<String>): MeetingStats {
         if (!hasPermission(Manifest.permission.READ_CALENDAR)) {
             notes.add("Calendar permission missing; meeting load is 0.")
-            return MeetingStats(0, null, null, null, null)
+            return MeetingStats(0, null, null, null, null, null)
         }
 
         val now = System.currentTimeMillis()
@@ -134,6 +135,7 @@ class ContextCollector(private val context: Context) {
 
         var count = 0
         var nextStart: Long? = null
+        var nextEnd: Long? = null
         var nextLocation: String? = null
         var nextTitle: String? = null
         context.contentResolver.query(uri, projection, null, null, "${CalendarContract.Instances.BEGIN} ASC")?.use { cursor ->
@@ -149,6 +151,7 @@ class ContextCollector(private val context: Context) {
                 count += 1
                 if (nextStart == null) {
                     nextStart = begin
+                    nextEnd = end
                     nextLocation = cursor.getString(locationIndex)?.takeIf { it.isNotBlank() }
                     nextTitle = cursor.getString(titleIndex)?.takeIf { it.isNotBlank() }
                 }
@@ -165,6 +168,7 @@ class ContextCollector(private val context: Context) {
             meetingLoadToday = count,
             nextMeetingMinutes = nextStart?.let { TimeUnit.MILLISECONDS.toMinutes(it - now).coerceAtLeast(0).toInt() },
             nextMeetingStartEpochMs = nextStart,
+            nextMeetingEndEpochMs = nextEnd,
             nextMeetingLocation = nextLocation,
             nextMeetingTitle = nextTitle
         )
@@ -370,16 +374,28 @@ class ContextCollector(private val context: Context) {
             val root = org.json.JSONObject(raw)
             if (root.optString("date") != today) return@runCatching TodoStats(0, 0, 0, 0, readLearnedTodoHours())
             val items = root.optJSONArray("items") ?: org.json.JSONArray()
+            var changed = false
             var pending = 0
             var urgent = 0
             var overdue = 0
             for (index in 0 until items.length()) {
                 val item = items.getJSONObject(index)
+                val endAt = item.optLong("endAt", 0L)
+                if (!item.optBoolean("completed") && endAt > 0L && endAt < now) {
+                    item.put("completed", true)
+                    item.put("updatedAt", now)
+                    changed = true
+                }
                 if (item.optBoolean("completed")) continue
                 pending += 1
-                val due = item.optLong("dueAt", 0L)
-                if (due > 0L && due < now) overdue += 1
-                if (due > 0L && due <= now + TimeUnit.HOURS.toMillis(3)) urgent += 1
+                val startAt = item.optLong("startAt", item.optLong("dueAt", 0L))
+                if (startAt > 0L && startAt < now) overdue += 1
+                if (startAt > 0L && startAt <= now + TimeUnit.HOURS.toMillis(3)) urgent += 1
+            }
+            if (changed) {
+                root.put("items", items)
+                root.put("updatedAt", now)
+                prefs().edit().putString(KEY_DAY_TODOS, root.toString()).apply()
             }
             val pressure = (pending * 8 + urgent * 12 + overdue * 20).coerceIn(0, 100)
             TodoStats(pending, urgent, overdue, pressure, readLearnedTodoHours())
@@ -440,6 +456,7 @@ class ContextCollector(private val context: Context) {
         val meetingLoadToday: Int,
         val nextMeetingMinutes: Int?,
         val nextMeetingStartEpochMs: Long?,
+        val nextMeetingEndEpochMs: Long?,
         val nextMeetingLocation: String?,
         val nextMeetingTitle: String?
     )

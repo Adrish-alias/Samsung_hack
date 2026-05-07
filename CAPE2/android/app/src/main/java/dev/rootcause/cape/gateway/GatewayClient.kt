@@ -180,6 +180,7 @@ class GatewayClient(private val baseUrl: String = "http://127.0.0.1:8787") {
             .put("implicitWorkload", implicitWorkload)
             .put("nextMeetingMinutes", nextMeetingMinutes)
             .put("nextMeetingStartEpochMs", nextMeetingStartEpochMs)
+            .put("nextMeetingEndEpochMs", nextMeetingEndEpochMs)
             .put("nextMeetingLocation", resolvedMeetingLocation())
             .put("nextMeetingTitle", nextMeetingTitle)
             .put("currentTimeIso", currentTimeIso)
