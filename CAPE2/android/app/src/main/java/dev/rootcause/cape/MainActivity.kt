@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.app.TimePickerDialog
 import android.content.BroadcastReceiver
 import android.content.ContentValues
 import android.content.Context
@@ -23,13 +24,18 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -39,8 +45,32 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.outlined.Bedtime
+import androidx.compose.material.icons.outlined.DateRange
+import androidx.compose.material.icons.outlined.DirectionsCar
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material.icons.outlined.SmartToy
+import androidx.compose.material.icons.outlined.Room
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Notifications
+
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -49,15 +79,28 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -67,6 +110,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -74,11 +118,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -103,17 +151,62 @@ import kotlinx.coroutines.delay
 import org.json.JSONArray
 import org.json.JSONObject
 
-private val CapeBg = Color(0xFFF4F7FF)
-private val Glass = Color(0xFFFFFFFF)
-private val GlassStrong = Color(0xFFEDEBFF)
-private val CapeText = Color(0xFF111827)
-private val CapeMuted = Color(0xFF5B6478)
-private val CapeAccent = Color(0xFF5B67F1)
-private val CapeBlue = Color(0xFF2F80ED)
-private val CapeGreen = Color(0xFF22C55E)
-private val CapeOrange = Color(0xFFF97316)
-private val CapeWarning = Color(0xFFFBBF24)
-private val CapeDanger = Color(0xFFFB7185)
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Design Tokens — Trust Blue / Glassmorphism / Material 3
+// Source: Stitch project "CAPE Adaptive Assistant UI" (id: 16936172592145115519)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Primary — Trust Blue
+private val CapePrimary           = Color(0xFF1A56DB)
+private val CapePrimaryDark       = Color(0xFF003FB1)
+private val CapeOnPrimary         = Color(0xFFFFFFFF)
+private val CapePrimaryContainer  = Color(0xFFDBE1FF)
+private val CapeOnPrimaryContainer = Color(0xFF00174D)
+
+// Secondary — Calm Slate
+private val CapeSecondary         = Color(0xFF515F74)
+private val CapeOnSecondary       = Color(0xFFFFFFFF)
+private val CapeSecondaryContainer = Color(0xFFD5E3FC)
+
+// Tertiary
+private val CapeTertiary          = Color(0xFF00544C)
+private val CapeTertiaryContainer = Color(0xFF006E65)
+
+// Background & Surface
+private val CapeBg                = Color(0xFFF7F9FB)
+private val CapeGlass             = Color(0xBFFFFFFF)   // 75% white — primary glass card
+private val CapeGlassStrong       = Color(0xE6F2F4F6)   // elevated glass surface
+private val CapeGlassBorder       = Color(0x14000000)   // 8% black border
+private val GlassWhite            = Color(0xFFFFFFFF)   // pure surface
+
+// Text
+private val CapeText              = Color(0xFF191C1E)
+private val CapeMuted             = Color(0xFF434654)
+private val CapeOutline           = Color(0xFF737686)
+private val CapeOutlineVariant    = Color(0xFFC3C5D7)
+
+// Semantic Stress States
+private val StressLow             = Color(0xFF22C55E)
+private val StressMedium          = Color(0xFFF59E0B)
+private val StressHigh            = Color(0xFFEF4444)
+private val StressLowBg           = Color(0xFFDCFCE7)
+private val StressMediumBg        = Color(0xFFFEF9C3)
+private val StressHighBg          = Color(0xFFFFE4E6)
+
+// Accent helpers
+private val CapeAccent            = Color(0xFF1A56DB)   // alias → Trust Blue
+private val CapeBlue              = Color(0xFF2F80ED)
+private val CapeGreen             = Color(0xFF22C55E)
+private val CapeOrange            = Color(0xFFF97316)
+private val CapeWarning           = Color(0xFFF59E0B)
+private val CapeDanger            = Color(0xFFEF4444)
+
+// Legacy compat aliases (keep so helper fns compile unchanged)
+private val Glass                 = GlassWhite
+private val GlassStrong           = CapeGlassStrong
+
 
 private data class CommuteCacheEntry(
     val meetingKey: String,
@@ -351,21 +444,31 @@ fun CapeApp(onRequestRuntimePermissions: () -> Unit = {}) {
 
     MaterialTheme(
         colorScheme = lightColorScheme(
-            primary = CapeAccent,
-            secondary = CapeBlue,
-            background = CapeBg,
-            surface = Glass,
-            onPrimary = Color.White,
-            onBackground = CapeText,
-            onSurface = CapeText
+            primary          = CapePrimary,
+            onPrimary        = CapeOnPrimary,
+            primaryContainer = CapePrimaryContainer,
+            secondary        = CapeSecondary,
+            onSecondary      = CapeOnSecondary,
+            secondaryContainer = CapeSecondaryContainer,
+            tertiary         = CapeTertiary,
+            tertiaryContainer = CapeTertiaryContainer,
+            background       = CapeBg,
+            surface          = GlassWhite,
+            onBackground     = CapeText,
+            onSurface        = CapeText,
+            outline          = CapeOutline,
+            outlineVariant   = CapeOutlineVariant
         )
     ) {
         Surface(modifier = Modifier.fillMaxSize(), color = CapeBg) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Brush.verticalGradient(listOf(Color(0xFFEFF4FF), Color(0xFFE5E8FF), Color(0xFFF9FAFF))))
-                    .padding(16.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color(0xFFF0F4FF), Color(0xFFECF0FB), CapeBg)
+                        )
+                    )
             ) {
                 if (!isOnboarded) {
                     SignupScreen(
@@ -396,54 +499,104 @@ private fun SignupScreen(
     var college by remember { mutableStateOf("") }
     var status by remember { mutableStateOf("") }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Spacer(Modifier.height(12.dp))
-        Text("CAPE", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.ExtraBold)
-        Text("Set up your stress-aware commute assistant.", color = CapeMuted)
-        GlassCard {
-            Text("Create Profile", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            OutlinedTextField(value = name, onValueChange = { name = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Name") })
-            OutlinedTextField(value = home, onValueChange = { home = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Home location, optional") })
-            OutlinedTextField(value = work, onValueChange = { work = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Work location, optional") })
-            OutlinedTextField(value = college, onValueChange = { college = it }, modifier = Modifier.fillMaxWidth(), label = { Text("College location, optional") })
-            Text("You can skip places now and add them later. Calendar and location permissions help CAPE detect meetings, destination, and commute state.", color = CapeMuted)
-            OutlinedButton(onClick = onRequestRuntimePermissions, modifier = Modifier.fillMaxWidth()) {
-                Text("Grant Location, Calendar, Notifications")
-            }
-            Button(
-                onClick = {
-                    status = "Resolving places..."
-                    Thread {
-                        val places = listOf("home" to home, "work" to work, "college" to college)
-                            .filter { it.second.isNotBlank() }
-                            .mapNotNull { (kind, query) ->
-                                runCatching {
-                                    val place = GatewayClient().geocodePlace(query)
-                                    place.copy(kind = kind, label = kind.replaceFirstChar { it.titlecase() }, radiusMeters = fixedPlaceRadius(kind))
-                                }.getOrNull()
-                            }
-                        (context as? ComponentActivity)?.runOnUiThread {
-                            onComplete(UserProfile(name.ifBlank { "User" }), places)
-                        }
-                    }.start()
-                },
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = CapeAccent)
+    Box(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier.fillMaxWidth().height(280.dp).background(
+                Brush.verticalGradient(listOf(CapePrimaryDark, CapePrimary, Color(0xFF3D72E8)))
+            )
+        ) {
+            Column(
+                modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 40.dp),
+                verticalArrangement = Arrangement.Center
             ) {
-                Text("Continue")
+                Box(
+                    modifier = Modifier.size(48.dp).background(Color.White.copy(alpha = 0.2f), RoundedCornerShape(12.dp)),
+                    contentAlignment = Alignment.Center
+                ) { Text("C", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold) }
+                Spacer(Modifier.height(14.dp))
+                Text("CAPE", color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.ExtraBold)
+                Text("Your stress-aware adaptive assistant", color = Color.White.copy(alpha = 0.85f), fontSize = 15.sp)
+                Spacer(Modifier.height(14.dp))
+                Row(
+                    modifier = Modifier.background(Color.White.copy(alpha = 0.15f), RoundedCornerShape(100.dp)).padding(horizontal = 14.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(Icons.Outlined.Shield, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                    Text("Privacy-first · Data stays on device", color = Color.White, fontSize = 12.sp)
+                }
             }
-            if (status.isNotBlank()) Text(status, color = CapeMuted)
+        }
+        Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = 236.dp)) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+                colors = CardDefaults.cardColors(containerColor = GlassWhite),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 28.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text("Set up your profile", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(
+                        "Places are optional — add later. Permissions help CAPE detect meetings and plan commutes.",
+                        color = CapeMuted, fontSize = 13.sp
+                    )
+                    StyledTextField(value = name, onValueChange = { name = it }, label = "Your name")
+                    StyledTextField(value = home, onValueChange = { home = it }, label = "Home address (optional)")
+                    StyledTextField(value = work, onValueChange = { work = it }, label = "Work address (optional)")
+                    StyledTextField(value = college, onValueChange = { college = it }, label = "College address (optional)")
+                    OutlinedButton(onClick = onRequestRuntimePermissions, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                        Icon(Icons.Outlined.Shield, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Grant Permissions", fontWeight = FontWeight.SemiBold)
+                    }
+                    Button(
+                        onClick = {
+                            status = "Resolving places…"
+                            Thread {
+                                val places = listOf("home" to home, "work" to work, "college" to college)
+                                    .filter { it.second.isNotBlank() }
+                                    .mapNotNull { (kind, query) ->
+                                        runCatching {
+                                            val place = GatewayClient().geocodePlace(query)
+                                            place.copy(kind = kind, label = kind.replaceFirstChar { it.titlecase() }, radiusMeters = fixedPlaceRadius(kind))
+                                        }.getOrNull()
+                                    }
+                                (context as? ComponentActivity)?.runOnUiThread { onComplete(UserProfile(name.ifBlank { "User" }), places) }
+                            }.start()
+                        },
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = CapePrimary)
+                    ) { Text("Get Started", fontWeight = FontWeight.SemiBold, fontSize = 16.sp) }
+                    if (status.isNotBlank()) Text(status, color = CapeMuted, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(16.dp))
+                }
+            }
         }
     }
 }
 
 @Composable
+private fun StyledTextField(value: String, onValueChange: (String) -> Unit, label: String) {
+    OutlinedTextField(
+        value = value, onValueChange = onValueChange, modifier = Modifier.fillMaxWidth(),
+        label = { Text(label, fontSize = 13.sp) }, shape = RoundedCornerShape(12.dp), singleLine = true,
+        colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = CapePrimary, unfocusedBorderColor = CapeOutlineVariant,
+            focusedLabelColor = CapePrimary, cursorColor = CapePrimary
+        )
+    )
+}
+
+
+
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 private fun HomeShell(onRequestRuntimePermissions: () -> Unit) {
+
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("cape_context", Context.MODE_PRIVATE) }
     val collector = remember { ContextCollector(context.applicationContext) }
@@ -587,75 +740,148 @@ private fun HomeShell(onRequestRuntimePermissions: () -> Unit) {
         syncOnce()
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        Header(syncStatus)
-        SectionTabs(selectedSection) { selectedSection = it }
-        when (selectedSection) {
-            HomeSection.Dashboard -> DashboardSection(
-                collection = collection,
-                decision = decision,
-                onRequestRuntimePermissions = onRequestRuntimePermissions,
-                onRequestDndAccess = { openNotificationPolicyAccessSettings(context) },
-                onRequestWriteSettings = { openWriteSettingsPanel(context) },
-                onRequestUsageAccess = { openUsageAccessSettings(context) },
-                onApplyPack = {
-                    val executableDecision = if (decision.type == "SUGGEST_PACK") {
-                        decision.copy(type = "APPLY_PACK", actions = decision.suggestedActions, suggestedActions = emptyList())
-                    } else {
-                        decision
+    Scaffold(
+        containerColor = CapeBg,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                        val greeting = when ((java.time.LocalTime.now().hour)) {
+                            in 5..11 -> "Good morning"
+                            in 12..16 -> "Good afternoon"
+                            else -> "Good evening"
+                        }
+                        Text(greeting, style = MaterialTheme.typography.labelMedium, color = CapeMuted)
+                        Text("CAPE", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold, color = CapeText)
                     }
-                    pendingApproval = executableDecision
                 },
-                onApplyDemoWallpaper = { wallpaperAction ->
-                    val demoDecision = decision.copy(
-                        type = "APPLY_PACK",
-                        packId = "manual_wallpaper_demo",
-                        actions = listOf(wallpaperAction),
-                        suggestedActions = emptyList(),
-                        blockedByPermission = emptyList(),
-                        explanation = "Manual wallpaper demo action."
+                actions = {
+                    // Sync status pill
+                    val synced = syncStatus.startsWith("Synced")
+                    Box(
+                        modifier = Modifier
+                            .background(
+                                if (synced) StressLowBg else CapeSecondaryContainer,
+                                RoundedCornerShape(100.dp)
+                            )
+                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            if (synced) "● Live" else "● Syncing",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (synced) StressLow else CapeSecondary
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = GlassWhite,
+                    scrolledContainerColor = GlassWhite
+                )
+            )
+        },
+        bottomBar = {
+            NavigationBar(
+                containerColor = GlassWhite,
+                contentColor = CapePrimary,
+                tonalElevation = 0.dp
+            ) {
+                data class NavItem(val section: HomeSection, val icon: ImageVector, val label: String)
+                val items = listOf(
+                    NavItem(HomeSection.Dashboard, Icons.Outlined.Home, "Home"),
+                    NavItem(HomeSection.Commute, Icons.Outlined.DirectionsCar, "Commute"),
+                    NavItem(HomeSection.Plan, Icons.Outlined.DateRange, "Plan"),
+                    NavItem(HomeSection.Profile, Icons.Outlined.Person, "Profile")
+                )
+                items.forEach { item ->
+                    NavigationBarItem(
+                        selected = selectedSection == item.section,
+                        onClick = { selectedSection = item.section },
+                        icon = { Icon(item.icon, contentDescription = item.label, modifier = Modifier.size(22.dp)) },
+                        label = { Text(item.label, fontSize = 11.sp) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = CapePrimary,
+                            selectedTextColor = CapePrimary,
+                            unselectedIconColor = CapeMuted,
+                            unselectedTextColor = CapeMuted,
+                            indicatorColor = CapePrimaryContainer
+                        )
                     )
-                    pendingApproval = demoDecision
-                },
-                executionStatus = executionStatus
-            )
-            HomeSection.Commute -> CommuteSection(
-                decision = decision,
-                meetingKey = buildMeetingKey(collection.snapshot),
-                onCloseRoute = { key ->
-                    val cache = loadCommuteCache(context).toMutableMap()
-                    cache[key]?.let { entry ->
-                        cache[key] = entry.copy(dismissed = true)
-                        saveCommuteCache(context, cache)
-                        decision = decision.copy(commutePlan = null)
-                    }
-                },
-                onSendFeedback = { signal, note ->
-                    Thread {
-                        val ack = runCatching {
-                            GatewayClient().sendFeedback(
-                                packId = decision.packId.ifBlank { "commute_feedback" },
-                                signal = signal,
-                                note = note
-                            )
+                }
+            }
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            when (selectedSection) {
+                HomeSection.Dashboard -> DashboardSection(
+                    collection = collection,
+                    decision = decision,
+                    onRequestRuntimePermissions = onRequestRuntimePermissions,
+                    onRequestDndAccess = { openNotificationPolicyAccessSettings(context) },
+                    onRequestWriteSettings = { openWriteSettingsPanel(context) },
+                    onRequestUsageAccess = { openUsageAccessSettings(context) },
+                    onApplyPack = {
+                        val executableDecision = if (decision.type == "SUGGEST_PACK") {
+                            decision.copy(type = "APPLY_PACK", actions = decision.suggestedActions, suggestedActions = emptyList())
+                        } else {
+                            decision
                         }
-                        (context as? ComponentActivity)?.runOnUiThread {
-                            feedbackStatus = ack.fold(
-                                onSuccess = { "Feedback saved: ${it.message}" },
-                                onFailure = { "Feedback failed to send" }
-                            )
+                        pendingApproval = executableDecision
+                    },
+                    onApplyDemoWallpaper = { wallpaperAction ->
+                        val demoDecision = decision.copy(
+                            type = "APPLY_PACK",
+                            packId = "manual_wallpaper_demo",
+                            actions = listOf(wallpaperAction),
+                            suggestedActions = emptyList(),
+                            blockedByPermission = emptyList(),
+                            explanation = "Manual wallpaper demo action."
+                        )
+                        pendingApproval = demoDecision
+                    },
+                    executionStatus = executionStatus
+                )
+                HomeSection.Commute -> CommuteSection(
+                    decision = decision,
+                    meetingKey = buildMeetingKey(collection.snapshot),
+                    onCloseRoute = { key ->
+                        val cache = loadCommuteCache(context).toMutableMap()
+                        cache[key]?.let { entry ->
+                            cache[key] = entry.copy(dismissed = true)
+                            saveCommuteCache(context, cache)
+                            decision = decision.copy(commutePlan = null)
                         }
-                    }.start()
-                },
-                feedbackStatus = feedbackStatus
-            )
-            HomeSection.Profile -> ProfileSection(collection.snapshot)
-            HomeSection.Plan -> TodoSection(snapshot = collection.snapshot)
+                    },
+                    onSendFeedback = { signal, note ->
+                        Thread {
+                            val ack = runCatching {
+                                GatewayClient().sendFeedback(
+                                    packId = decision.packId.ifBlank { "commute_feedback" },
+                                    signal = signal,
+                                    note = note
+                                )
+                            }
+                            (context as? ComponentActivity)?.runOnUiThread {
+                                feedbackStatus = ack.fold(
+                                    onSuccess = { "Feedback saved: ${it.message}" },
+                                    onFailure = { "Feedback failed to send" }
+                                )
+                            }
+                        }.start()
+                    },
+                    feedbackStatus = feedbackStatus
+                )
+                HomeSection.Profile -> ProfileSection(collection.snapshot)
+                HomeSection.Plan -> TodoSection(snapshot = collection.snapshot)
+            }
         }
     }
     pendingApproval?.let { approvalDecision ->
@@ -708,6 +934,7 @@ private fun HomeShell(onRequestRuntimePermissions: () -> Unit) {
     }
 }
 
+
 @Composable
 private fun Header(syncStatus: String) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -717,32 +944,88 @@ private fun Header(syncStatus: String) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ApprovalDialog(
     decision: CapeDecision,
     onDecision: (Boolean) -> Unit
 ) {
-    AlertDialog(
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
         onDismissRequest = { onDecision(false) },
-        title = { Text("Apply this CAPE decision?") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                MetricRow("Pack", decision.packId)
-                MetricRow("Confidence", "%.2f".format(decision.confidence))
-                Text("Key actions", fontWeight = FontWeight.SemiBold)
-                val actions = decision.actions.ifEmpty { decision.suggestedActions }
-                Text(actions.take(5).joinToString().ifBlank { "none" }, color = CapeMuted)
+        sheetState = sheetState,
+        containerColor = GlassWhite,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Handle
+            Box(modifier = Modifier.width(40.dp).height(4.dp).background(CapeOutlineVariant, RoundedCornerShape(100.dp)).align(Alignment.CenterHorizontally))
+            Spacer(Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Icon(Icons.Outlined.SmartToy, contentDescription = null, tint = CapePrimary, modifier = Modifier.size(22.dp))
+                Text("Apply CAPE Decision?", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             }
-        },
-        confirmButton = {
-            Button(onClick = { onDecision(true) }) { Text("YES") }
-        },
-        dismissButton = {
-            OutlinedButton(onClick = { onDecision(false) }) { Text("NO") }
-        },
-        containerColor = Glass
-    )
+            // Pack badge
+            Box(
+                modifier = Modifier.background(CapePrimaryContainer, RoundedCornerShape(100.dp)).padding(horizontal = 12.dp, vertical = 5.dp)
+            ) {
+                Text(decision.packId.ifBlank { "no pack" }, color = CapePrimaryDark, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            }
+            // Confidence
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Confidence", color = CapeMuted, fontSize = 13.sp)
+                    Text("%.0f%%".format(decision.confidence * 100), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                }
+                LinearProgressIndicator(
+                    progress = { decision.confidence.toFloat().coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(100.dp)),
+                    color = CapePrimary,
+                    trackColor = CapePrimaryContainer
+                )
+            }
+            // Actions
+            val actions = decision.actions.ifEmpty { decision.suggestedActions }
+            if (actions.isNotEmpty()) {
+                Text("Actions", color = CapeMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    actions.take(4).forEach { action ->
+                        Box(
+                            modifier = Modifier.background(CapePrimaryContainer, RoundedCornerShape(100.dp)).padding(horizontal = 10.dp, vertical = 5.dp)
+                        ) { Text(action.replace("_", " "), fontSize = 12.sp, color = CapePrimaryDark) }
+                    }
+                }
+            }
+            HorizontalDivider(color = CapeOutlineVariant, thickness = 0.5.dp)
+            Text(
+                "CAPE will apply these changes to your device now. You can always reset from the Pack Execution card.",
+                color = CapeMuted, fontSize = 13.sp
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(
+                    onClick = { onDecision(false) },
+                    modifier = Modifier.weight(1f).height(52.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) { Text("No, Skip", fontWeight = FontWeight.SemiBold) }
+                Button(
+                    onClick = { onDecision(true) },
+                    modifier = Modifier.weight(2f).height(52.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = CapePrimary)
+                ) {
+                    Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Yes, Apply", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+    }
 }
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -754,75 +1037,128 @@ private fun ReflectionBottomSheet(
     val options = listOf("Heavy workload", "Assignments", "Meetings", "Exams", "Personal stress", "Chill day")
     var selected by remember { mutableStateOf(setOf<String>()) }
     var note by remember { mutableStateOf("") }
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Glass) {
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = GlassWhite,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 40.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text("Quick reflection", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text("Help CAPE learn what today felt like.", color = CapeMuted)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                options.take(3).forEach { option ->
-                    FilterChip(
-                        selected = selected.contains(option),
-                        onClick = { selected = toggleSelected(selected, option) },
-                        label = { Text(option) }
-                    )
-                }
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                options.drop(3).forEach { option ->
-                    FilterChip(
-                        selected = selected.contains(option),
-                        onClick = { selected = toggleSelected(selected, option) },
-                        label = { Text(option) }
-                    )
-                }
-            }
-            OutlinedTextField(
-                value = note,
-                onValueChange = { note = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Optional note") }
+            // Handle
+            Box(
+                modifier = Modifier
+                    .width(40.dp).height(4.dp)
+                    .background(CapeOutlineVariant, RoundedCornerShape(100.dp))
+                    .align(Alignment.CenterHorizontally)
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Later") }
+            Spacer(Modifier.height(2.dp))
+
+            // Header
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .background(CapePrimaryContainer, RoundedCornerShape(12.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("🌙", fontSize = 22.sp)
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Quick Reflection", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text("Help CAPE learn what today felt like.", color = CapeMuted, fontSize = 13.sp)
+                }
+            }
+
+            HorizontalDivider(color = CapeOutlineVariant, thickness = 0.5.dp)
+
+            // Tag chips (wrap layout)
+            Text("How was today?", color = CapeMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(options.take(3), options.drop(3)).forEach { row ->
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        row.forEach { option ->
+                            val isSelected = selected.contains(option)
+                            Box(
+                                modifier = Modifier
+                                    .clickable { selected = toggleSelected(selected, option) }
+                                    .background(
+                                        if (isSelected) CapePrimary else CapeSecondaryContainer,
+                                        RoundedCornerShape(100.dp)
+                                    )
+                                    .border(
+                                        1.dp,
+                                        if (isSelected) CapePrimary.copy(alpha = 0.3f) else CapeOutlineVariant,
+                                        RoundedCornerShape(100.dp)
+                                    )
+                                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                            ) {
+                                Text(
+                                    option,
+                                    fontSize = 13.sp,
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                    color = if (isSelected) Color.White else CapeText
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Note field
+            StyledTextField(value = note, onValueChange = { note = it }, label = "Optional note for CAPE…")
+
+            // Status
+            if (status.isNotBlank()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(StressLowBg, RoundedCornerShape(8.dp))
+                        .padding(10.dp)
+                ) {
+                    Text(status, color = CapeTertiary, fontSize = 13.sp)
+                }
+            }
+
+            // Actions
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f).height(52.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) { Text("Later", fontWeight = FontWeight.SemiBold) }
                 Button(
                     onClick = { onSubmit(selected.toList(), note) },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(2f).height(52.dp),
                     enabled = selected.isNotEmpty() || note.isNotBlank(),
-                    colors = ButtonDefaults.buttonColors(containerColor = CapeAccent)
-                ) { Text("Save") }
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = CapePrimary)
+                ) {
+                    Text("Save Reflection", fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
+                }
             }
-            if (status.isNotBlank()) Text(status, color = CapeMuted)
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(4.dp))
         }
     }
 }
+
 
 private fun toggleSelected(current: Set<String>, value: String): Set<String> =
     if (current.contains(value)) current - value else current + value
 
-@Composable
-private fun SectionTabs(selected: HomeSection, onSelect: (HomeSection) -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-        HomeSection.values().forEach { section ->
-            FilterChip(
-                selected = selected == section,
-                onClick = { onSelect(section) },
-                label = { Text(section.label) }
-            )
-        }
-    }
-}
+
+// SectionTabs removed — navigation now provided by BottomNavigationBar in HomeShell
+
+
+
 
 @Composable
 private fun DashboardSection(
@@ -837,87 +1173,321 @@ private fun DashboardSection(
     executionStatus: String
 ) {
     val snapshot = collection.snapshot
+    val context = LocalContext.current
+
+    // ── 1. Stress Gauge Card ─────────────────────────────────────────────────
     GlassCard {
         Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             StressGauge(score = decision.stress.score, level = decision.stress.level)
         }
-        Text(decision.explanation, color = CapeMuted, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            StressLevelChip(decision.stress.level)
+        }
+        if (decision.explanation.isNotBlank()) {
+            Text(
+                decision.explanation,
+                color = CapeMuted,
+                textAlign = TextAlign.Center,
+                fontSize = 13.sp,
+                fontStyle = FontStyle.Italic,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+
+    // ── 2. Context Mode Banner ────────────────────────────────────────────────
+    ContextModeBanner(snapshot.locationState)
+
+    // ── 3. Metric Grid 2×2 ───────────────────────────────────────────────────
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+        MetricTile(
+            icon = Icons.Outlined.Bedtime,
+            label = "Sleep Debt",
+            value = "${snapshot.sleepDebtMinutes} min",
+            tint = CapeBlue,
+            modifier = Modifier.weight(1f)
+        )
+        MetricTile(
+            icon = Icons.Filled.Schedule,
+            label = "Meetings",
+            value = snapshot.meetingLoadToday.toString(),
+            tint = CapeTertiary,
+            modifier = Modifier.weight(1f)
+        )
     }
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-        InfoTile("Sleep debt", "${snapshot.sleepDebtMinutes} min", Modifier.weight(1f))
-        InfoTile("Meetings", snapshot.meetingLoadToday.toString(), Modifier.weight(1f))
+        MetricTile(
+            icon = Icons.Filled.TrendingUp,
+            label = "Todo Pressure",
+            value = "${snapshot.todoPressureScore}/100",
+            tint = if ((snapshot.todoPressureScore ?: 0) > 60) StressHigh else CapeGreen,
+            modifier = Modifier.weight(1f)
+        )
+        MetricTile(
+            icon = Icons.Filled.Warning,
+            label = "Overdue",
+            value = snapshot.todoOverdueCount.toString(),
+            tint = if ((snapshot.todoOverdueCount ?: 0) > 0) CapeOrange else CapeGreen,
+            modifier = Modifier.weight(1f)
+        )
     }
+
+    // ── 4. Today's Context ───────────────────────────────────────────────────
     GlassCard {
-        Text("Today", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        MetricRow("Current location", readableLocation(snapshot))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(Icons.Filled.Schedule, contentDescription = null, tint = CapePrimary, modifier = Modifier.size(18.dp))
+            Text("Today's Context", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        }
+        HorizontalDivider(color = CapeOutlineVariant, thickness = 0.5.dp)
+        MetricRow("Location", readableLocation(snapshot))
         MetricRow("Next meeting", snapshot.nextMeetingTitle ?: "No meeting found")
         MetricRow("Destination", snapshot.nextMeetingLocation ?: "No destination")
         MetricRow("Starts in", snapshot.nextMeetingMinutes?.let { "$it min" } ?: "none")
     }
-    GlassCard {
-        Text("Permissions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        val permissions = readPermissionState(LocalContext.current)
-        MetricRow("Location", if (permissions.location) "Granted" else "Missing")
-        MetricRow("Calendar", if (permissions.calendar) "Granted" else "Missing")
-        MetricRow("Calendar write", if (permissions.calendarWrite) "Granted" else "Missing")
-        MetricRow("Usage access", if (permissions.usageStats) "Granted" else "Open settings")
-        MetricRow("Notifications", if (permissions.notifications) "Granted" else "Missing")
-        MetricRow("DND access", if (permissions.notificationPolicyAccess) "Granted" else "Open settings")
-        MetricRow("Brightness control", if (permissions.writeSettings) "Granted" else "Open settings")
-        Button(onClick = onRequestRuntimePermissions, modifier = Modifier.fillMaxWidth()) { Text("Update Permissions") }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            OutlinedButton(onClick = onRequestDndAccess, modifier = Modifier.weight(1f)) { Text("DND Access") }
-            OutlinedButton(onClick = onRequestWriteSettings, modifier = Modifier.weight(1f)) { Text("Brightness Access") }
+
+    // ── 5. Permissions Card (compact status) ─────────────────────────────────
+    var permExpanded by remember { mutableStateOf(false) }
+    val permissions = readPermissionState(context)
+    val allGranted = permissions.location && permissions.calendar && permissions.notifications
+    GlassCard(container = if (allGranted) StressLowBg.copy(alpha = 0.3f) else StressHighBg.copy(alpha = 0.3f)) {
+        Row(
+            modifier = Modifier.fillMaxWidth().clickable { permExpanded = !permExpanded },
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Outlined.Shield, contentDescription = null,
+                    tint = if (allGranted) StressLow else StressHigh, modifier = Modifier.size(18.dp))
+                Text("Permissions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Box(
+                    modifier = Modifier
+                        .background(if (allGranted) StressLowBg else StressHighBg, RoundedCornerShape(100.dp))
+                        .padding(horizontal = 10.dp, vertical = 3.dp)
+                ) {
+                    Text(
+                        if (allGranted) "All Granted" else "Action Needed",
+                        fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                        color = if (allGranted) StressLow else StressHigh
+                    )
+                }
+                Text(if (permExpanded) "▲" else "▼", color = CapeMuted, fontSize = 12.sp)
+            }
         }
-        OutlinedButton(onClick = onRequestUsageAccess, modifier = Modifier.fillMaxWidth()) {
-            Text("Usage Access")
+        if (permExpanded) {
+            HorizontalDivider(color = CapeOutlineVariant, thickness = 0.5.dp)
+            PermissionStatusRow("Location", permissions.location)
+            PermissionStatusRow("Calendar read", permissions.calendar)
+            PermissionStatusRow("Calendar write", permissions.calendarWrite)
+            PermissionStatusRow("Notifications", permissions.notifications)
+            PermissionStatusRow("DND access", permissions.notificationPolicyAccess)
+            PermissionStatusRow("Brightness control", permissions.writeSettings)
+            PermissionStatusRow("Usage access", permissions.usageStats)
+            Button(
+                onClick = onRequestRuntimePermissions,
+                modifier = Modifier.fillMaxWidth().height(44.dp),
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = CapePrimary)
+            ) { Text("Update Permissions", fontWeight = FontWeight.SemiBold) }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(onClick = onRequestDndAccess, modifier = Modifier.weight(1f), shape = RoundedCornerShape(10.dp)) { Text("DND") }
+                OutlinedButton(onClick = onRequestWriteSettings, modifier = Modifier.weight(1f), shape = RoundedCornerShape(10.dp)) { Text("Brightness") }
+                OutlinedButton(onClick = onRequestUsageAccess, modifier = Modifier.weight(1f), shape = RoundedCornerShape(10.dp)) { Text("Usage") }
+            }
         }
     }
+
+    // ── 6. Pack Execution Card ───────────────────────────────────────────────
     GlassCard {
-        Text("Pack Execution", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        MetricRow("Decision", decision.type)
-        MetricRow("Pack", decision.packId)
-        MetricRow("Confidence", "%.2f".format(decision.confidence))
-        MetricRow("Actions", (decision.actions.ifEmpty { decision.suggestedActions }).joinToString().ifBlank { "none" })
-        Text("CAPE will ask before any device setting changes. Background sync can suggest decisions and commute alerts, but pack execution needs your YES.", color = CapeMuted)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(Icons.Outlined.SmartToy, contentDescription = null, tint = CapePrimary, modifier = Modifier.size(18.dp))
+            Text("CAPE Decision", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.weight(1f))
+            Box(
+                modifier = Modifier
+                    .background(CapePrimaryContainer, RoundedCornerShape(100.dp))
+                    .padding(horizontal = 8.dp, vertical = 2.dp)
+            ) {
+                Text(decision.type.replace("_", " "), fontSize = 11.sp, color = CapePrimaryDark, fontWeight = FontWeight.SemiBold)
+            }
+        }
+        HorizontalDivider(color = CapeOutlineVariant, thickness = 0.5.dp)
+        MetricRow("Pack", decision.packId.ifBlank { "none" })
+        // Confidence bar
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Confidence", color = CapeMuted, fontSize = 13.sp)
+                Text("%.0f%%".format(decision.confidence * 100), color = CapeText, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            }
+            LinearProgressIndicator(
+                progress = { decision.confidence.toFloat().coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(100.dp)),
+                color = CapePrimary,
+                trackColor = CapePrimaryContainer
+            )
+        }
+        val actions = decision.actions.ifEmpty { decision.suggestedActions }
+        if (actions.isNotEmpty()) {
+            Text("Actions", color = CapeMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                actions.take(3).forEach { action ->
+                    Box(
+                        modifier = Modifier
+                            .background(CapePrimaryContainer, RoundedCornerShape(100.dp))
+                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Text(action.replace("_", " "), fontSize = 11.sp, color = CapePrimaryDark)
+                    }
+                }
+                if (actions.size > 3) Text("+ ${actions.size - 3} more", color = CapeMuted, fontSize = 11.sp, modifier = Modifier.align(Alignment.CenterVertically))
+            }
+        }
+        Text(
+            "CAPE always asks before applying changes to your device.",
+            color = CapeMuted, fontSize = 12.sp
+        )
         Button(
             onClick = onApplyPack,
             enabled = decision.type == "APPLY_PACK" || decision.type == "SUGGEST_PACK",
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = CapeAccent)
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+            shape = RoundedCornerShape(10.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = CapePrimary)
         ) {
-            Text(if (decision.type == "SUGGEST_PACK") "Apply Suggested Pack" else "Apply Pack")
+            Text(
+                if (decision.type == "SUGGEST_PACK") "Apply Suggested Pack" else "Apply Pack",
+                fontWeight = FontWeight.SemiBold
+            )
         }
-        if (executionStatus.isNotBlank()) Text(executionStatus, color = CapeMuted)
+        if (executionStatus.isNotBlank()) {
+            Box(modifier = Modifier.fillMaxWidth().background(StressLowBg, RoundedCornerShape(8.dp)).padding(10.dp)) {
+                Text(executionStatus, color = CapeTertiary, fontSize = 13.sp)
+            }
+        }
     }
+
+    // ── 7. OpenClaw / Intelligence ───────────────────────────────────────────
     OpenClawSection(decision)
+
+    // ── 8. Wallpaper Demo ────────────────────────────────────────────────────
     GlassCard {
-        Text("Wallpaper Demo", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            Button(
-                onClick = { onApplyDemoWallpaper("WALLPAPER_FOCUS") },
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = CapeAccent)
-            ) { Text("Focus") }
-            Button(
-                onClick = { onApplyDemoWallpaper("WALLPAPER_RELAX") },
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = CapeGreen)
-            ) { Text("Relax") }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Wallpaper Demo", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            Button(
-                onClick = { onApplyDemoWallpaper("WALLPAPER_COMMUTE") },
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = CapeBlue)
-            ) { Text("Commute") }
-            OutlinedButton(
-                onClick = { onApplyDemoWallpaper("WALLPAPER_RESET") },
-                modifier = Modifier.weight(1f)
-            ) { Text("Reset") }
+        Text("Manually test each wallpaper mode CAPE applies.", color = CapeMuted, fontSize = 13.sp)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            WallpaperDemoButton("Focus", CapePrimary, Modifier.weight(1f)) { onApplyDemoWallpaper("WALLPAPER_FOCUS") }
+            WallpaperDemoButton("Relax", CapeGreen, Modifier.weight(1f)) { onApplyDemoWallpaper("WALLPAPER_RELAX") }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            WallpaperDemoButton("Commute", CapeBlue, Modifier.weight(1f)) { onApplyDemoWallpaper("WALLPAPER_COMMUTE") }
+            OutlinedButton(onClick = { onApplyDemoWallpaper("WALLPAPER_RESET") }, modifier = Modifier.weight(1f).height(44.dp), shape = RoundedCornerShape(10.dp)) {
+                Text("Reset", fontWeight = FontWeight.SemiBold)
+            }
         }
     }
 }
+
+@Composable
+private fun WallpaperDemoButton(label: String, color: Color, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Button(
+        onClick = onClick, modifier = modifier.height(44.dp),
+        shape = RoundedCornerShape(10.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = color)
+    ) { Text(label, fontWeight = FontWeight.SemiBold) }
+}
+
+@Composable
+private fun PermissionStatusRow(label: String, granted: Boolean) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Text(label, color = CapeMuted, fontSize = 13.sp)
+        Box(
+            modifier = Modifier
+                .background(if (granted) StressLowBg else StressHighBg, RoundedCornerShape(100.dp))
+                .padding(horizontal = 8.dp, vertical = 2.dp)
+        ) {
+            Text(if (granted) "✓ Granted" else "✗ Missing", fontSize = 11.sp,
+                color = if (granted) StressLow else StressHigh, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+@Composable
+private fun StressLevelChip(level: String) {
+    val (bg, fg) = when (level.lowercase()) {
+        "low"      -> StressLowBg to StressLow
+        "medium"   -> StressMediumBg to StressMedium
+        "high"     -> StressHighBg to StressHigh
+        "critical" -> StressHighBg to StressHigh
+        else       -> CapeSecondaryContainer to CapeSecondary
+    }
+    Box(
+        modifier = Modifier
+            .background(bg, RoundedCornerShape(100.dp))
+            .padding(horizontal = 18.dp, vertical = 7.dp)
+    ) {
+        Text(
+            "● ${level.uppercase()} STRESS",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            color = fg,
+            letterSpacing = 0.5.sp
+        )
+    }
+}
+
+@Composable
+private fun ContextModeBanner(locationState: String) {
+    val (icon, label, bg, fg) = when (locationState.lowercase()) {
+        "office", "college" -> listOf(Icons.Filled.TrendingUp, "Focus Mode Active", CapePrimaryContainer, CapePrimary)
+        "home", "relaxing"  -> listOf(Icons.Outlined.Home, "Relax Mode Active", StressLowBg, StressLow)
+        "commuting"         -> listOf(Icons.Outlined.DirectionsCar, "Commute Mode Active", CapeSecondaryContainer, CapeSecondary)
+        else                -> return
+    }
+    @Suppress("UNCHECKED_CAST")
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(bg as Color, RoundedCornerShape(12.dp))
+            .border(1.dp, (fg as Color).copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Icon(icon as ImageVector, contentDescription = null, tint = fg, modifier = Modifier.size(18.dp))
+        Text(label as String, color = fg, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+        Spacer(Modifier.weight(1f))
+        Box(modifier = Modifier.background(fg.copy(alpha = 0.12f), RoundedCornerShape(100.dp)).padding(horizontal = 8.dp, vertical = 2.dp)) {
+            Text("Active", color = fg, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun MetricTile(icon: ImageVector, label: String, value: String, tint: Color, modifier: Modifier = Modifier) {
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Brush.linearGradient(listOf(GlassWhite.copy(0.95f), CapeGlass)), RoundedCornerShape(14.dp))
+                .border(1.dp, CapeGlassBorder, RoundedCornerShape(14.dp))
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+            Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold, color = CapeText)
+            Text(label, color = CapeMuted, fontSize = 12.sp)
+        }
+    }
+}
+
+
+
 
 @Composable
 private fun CommuteSection(
@@ -931,112 +1501,220 @@ private fun CommuteSection(
     val hasPlan = plan != null
     val hasMapRoute = plan != null && plan.source.contains("google_routes_api") && plan.polyline != null
     var feedbackNote by remember { mutableStateOf("") }
-    GlassCard {
-        Text("Commute Details", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        if (!hasPlan) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                CircularProgressIndicator(
-                    color = CapeAccent,
-                    strokeWidth = 3.dp,
-                    modifier = Modifier.size(20.dp)
+    val context = LocalContext.current
+
+    // ── ETA Banner (NEW — from Stitch Commute Intelligence screen) ────────────
+    if (hasPlan && plan != null) {
+        val isLate = plan.leaveInMinutes <= 0
+        val bannerBg = if (isLate) StressHighBg else CapePrimaryContainer
+        val bannerFg = if (isLate) StressHigh else CapePrimary
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(bannerBg, RoundedCornerShape(16.dp))
+                .border(1.dp, bannerFg.copy(alpha = 0.25f), RoundedCornerShape(16.dp))
+                .padding(18.dp)
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    if (isLate) "Leave now — running late!" else "Leave in ${plan.leaveInMinutes} min",
+                    color = bannerFg,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = (-0.3).sp
                 )
-                Text("Loading live commute details...", color = CapeMuted)
-            }
-        } else {
-            MetricRow("Destination", plan.destination ?: "Calendar destination")
-            MetricRow("Recommended departure", plan.leaveByLocal)
-            MetricRow("Data source", plan.source)
-            MetricRow("ETA", if (plan.etaMinutes > 0) "${plan.etaMinutes} min" else "unknown")
-            if (plan.leaveInMinutes <= 0) {
-                Text("You are running late. Leave as soon as possible.", color = CapeDanger, fontWeight = FontWeight.Bold)
-            } else {
-                Text(plan.reason, color = CapeMuted)
-            }
-            if (meetingKey != null) {
-                OutlinedButton(onClick = { onCloseRoute(meetingKey) }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Close this route")
+                plan.destination?.let {
+                    Text("→ $it", color = bannerFg.copy(alpha = 0.75f), fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.padding(top = 4.dp)) {
+                    if (plan.etaMinutes > 0) {
+                        Column {
+                            Text("ETA", color = bannerFg.copy(alpha = 0.6f), fontSize = 11.sp)
+                            Text("${plan.etaMinutes} min", color = bannerFg, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        }
+                    }
+                    if (plan.leaveByLocal.isNotBlank()) {
+                        Column {
+                            Text("Depart by", color = bannerFg.copy(alpha = 0.6f), fontSize = 11.sp)
+                            Text(plan.leaveByLocal, color = bannerFg, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        }
+                    }
                 }
             }
-            plan.mapsUrl?.let { url ->
-                val context = LocalContext.current
-                Button(
-                    onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = CapeBlue)
+        }
+    } else {
+        // No commute plan — informative empty state
+        GlassCard {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .background(CapePrimaryContainer, RoundedCornerShape(12.dp)),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Text("Open Fastest Route in Google Maps")
+                    Icon(Icons.Outlined.DirectionsCar, contentDescription = null, tint = CapePrimary, modifier = Modifier.size(22.dp))
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("No commute planned", fontWeight = FontWeight.Bold, color = CapeText)
+                    Text(
+                        "CAPE will calculate a route when a calendar meeting with a location is detected.",
+                        color = CapeMuted, fontSize = 12.sp
+                    )
                 }
             }
         }
     }
+
+    // ── Commute Info + Actions ────────────────────────────────────────────────
+    if (hasPlan && plan != null) {
+        GlassCard {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Outlined.DirectionsCar, contentDescription = null, tint = CapePrimary, modifier = Modifier.size(18.dp))
+                Text("Commute Details", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.weight(1f))
+                Box(
+                    modifier = Modifier.background(CapePrimaryContainer, RoundedCornerShape(100.dp)).padding(horizontal = 8.dp, vertical = 3.dp)
+                ) { Text(plan.source.take(20), fontSize = 10.sp, color = CapePrimaryDark) }
+            }
+            HorizontalDivider(color = CapeOutlineVariant, thickness = 0.5.dp)
+            MetricRow("Destination", plan.destination ?: "Calendar destination")
+            MetricRow("Reason", plan.reason.take(80).ifBlank { "Live route calculation" })
+            if (plan.leaveInMinutes <= 0) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().background(StressHighBg, RoundedCornerShape(8.dp)).padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(Icons.Filled.Warning, contentDescription = null, tint = StressHigh, modifier = Modifier.size(16.dp))
+                    Text("Leave immediately — departure time has passed!", color = StressHigh, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                }
+            }
+            if (meetingKey != null) {
+                OutlinedButton(onClick = { onCloseRoute(meetingKey) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp)) {
+                    Text("Dismiss Route")
+                }
+            }
+            plan.mapsUrl?.let { url ->
+                Button(
+                    onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = CapePrimary)
+                ) {
+                    Icon(Icons.Outlined.DirectionsCar, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Open in Google Maps", fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+    }
+
+    // ── Map ──────────────────────────────────────────────────────────────────
     if (hasMapRoute && plan?.polyline != null) {
         RouteMap(plan.polyline, plan.destination)
     }
+
+    // ── Transport Mode Cards ─────────────────────────────────────────────────
     if (hasPlan) plan?.modes?.forEach { mode ->
-        GlassCard(container = GlassStrong) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Column(Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(
-                            painter = painterResource(id = modeIcon(mode.id)),
-                            contentDescription = mode.label,
-                            tint = CapeBlue
-                        )
-                        Text(mode.label, fontWeight = FontWeight.Bold)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Brush.linearGradient(listOf(GlassWhite.copy(0.95f), CapeGlass)), RoundedCornerShape(14.dp))
+                    .border(1.dp, CapeGlassBorder, RoundedCornerShape(14.dp))
+                    .padding(14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(
+                        modifier = Modifier.size(40.dp).background(CapePrimaryContainer, RoundedCornerShape(10.dp)),
+                        contentAlignment = Alignment.Center
+                    ) { Text(modeEmoji(mode.id), fontSize = 20.sp) }
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(mode.label, fontWeight = FontWeight.Bold, color = CapeText)
+                        Text(mode.distanceText.ifBlank { "Route available" }, color = CapeMuted, fontSize = 12.sp)
                     }
-                    Text(mode.distanceText.ifBlank { "Route available" }, color = CapeMuted)
                 }
-                Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
-                    Text(mode.durationText, color = CapeAccent, fontWeight = FontWeight.Bold)
-                    Text("Leave ${mode.leaveByLocal}", color = CapeMuted)
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(mode.durationText, color = CapePrimary, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                    Text("Leave ${mode.leaveByLocal}", color = CapeMuted, fontSize = 12.sp)
                 }
             }
         }
     }
+
+    // ── Step-by-step directions (timeline style) ─────────────────────────────
     if (hasPlan && plan?.directions?.isNotEmpty() == true) {
         GlassCard {
-            Text("Route Guidance", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Route Guidance", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            }
+            HorizontalDivider(color = CapeOutlineVariant, thickness = 0.5.dp)
             plan.directions.forEachIndexed { index, step ->
-                Text("${modeEmoji(step.travelMode)} ${index + 1}. ${step.instruction}", color = CapeText)
-                Text("${step.distanceText} · ${step.durationText} · ${step.travelMode}", color = CapeMuted)
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    // Step indicator
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(
+                            modifier = Modifier.size(24.dp).background(CapePrimary, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) { Text("${index + 1}", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                        if (index < plan.directions.size - 1) {
+                            Box(modifier = Modifier.width(2.dp).height(24.dp).background(CapeOutlineVariant))
+                        }
+                    }
+                    Column(modifier = Modifier.weight(1f).padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("${modeEmoji(step.travelMode)} ${step.instruction}", color = CapeText, fontSize = 13.sp)
+                        Text("${step.distanceText} · ${step.durationText}", color = CapeMuted, fontSize = 11.sp)
+                    }
+                }
             }
             plan.mapsUrl?.let { url ->
-                val context = LocalContext.current
                 Button(
                     onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Open in Google Maps")
-                }
+                    modifier = Modifier.fillMaxWidth().height(44.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = CapePrimary)
+                ) { Text("Full Route in Google Maps", fontWeight = FontWeight.SemiBold) }
             }
         }
     }
+
+    // ── Feedback Card ────────────────────────────────────────────────────────
     if (hasPlan) GlassCard {
-        Text("Feedback for CAPE", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        Text("Tell CAPE and OpenClaw what worked so future departure estimates can adapt to your routine.", color = CapeMuted)
-        OutlinedTextField(
-            value = feedbackNote,
-            onValueChange = { feedbackNote = it },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("What happened today?") }
-        )
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(Icons.Outlined.SmartToy, contentDescription = null, tint = CapePrimary, modifier = Modifier.size(18.dp))
+            Text("Feedback for CAPE", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        }
+        Text("Tell CAPE what worked — future departure estimates will adapt to your routine.", color = CapeMuted, fontSize = 13.sp)
+        StyledTextField(value = feedbackNote, onValueChange = { feedbackNote = it }, label = "What happened today?")
         Button(
             onClick = {
                 onSendFeedback("neutral", feedbackNote.ifBlank { "Commute feedback submitted without explicit rating." })
                 feedbackNote = ""
             },
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = CapeAccent)
-        ) { Text("Send feedback to OpenClaw") }
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+            shape = RoundedCornerShape(10.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = CapePrimary)
+        ) { Text("Send Feedback", fontWeight = FontWeight.SemiBold) }
         if (feedbackStatus.isNotBlank()) {
-            Text(feedbackStatus, color = CapeMuted)
+            Box(modifier = Modifier.fillMaxWidth().background(StressLowBg, RoundedCornerShape(8.dp)).padding(10.dp)) {
+                Text(feedbackStatus, color = CapeTertiary, fontSize = 13.sp)
+            }
         }
     }
 }
+
+
 
 @Composable
 private fun ProfileSection(snapshot: ContextSnapshot) {
@@ -1052,97 +1730,115 @@ private fun ProfileSection(snapshot: ContextSnapshot) {
     var role by remember { mutableStateOf(prefs.getString(KEY_USER_ROLE, "student") ?: "student") }
     var startTime by remember { mutableStateOf(prefs.getString(KEY_ROUTINE_START, "09:00") ?: "09:00") }
     var endTime by remember { mutableStateOf(prefs.getString(KEY_ROUTINE_END, "16:00") ?: "16:00") }
-    var status by remember { mutableStateOf("Search and save places with real coordinates.") }
-    val places = snapshot.savedPlaces
+    var status by remember { mutableStateOf("") }
+    var places by remember(snapshot.savedPlaces) { mutableStateOf(snapshot.savedPlaces) }
 
-    GlassCard {
-        Text("Saved Places", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        Text("Type a place name, tap a suggestion, then save. Blank fields keep the existing saved place.", color = CapeMuted)
-        PlaceSearchField(
-            label = "Home",
-            value = home,
-            selectedPlace = selectedHome,
-            onValueChange = {
-                home = it
-                selectedHome = null
-            },
-            onPlaceSelected = {
-                selectedHome = it
-                home = it.label
-            }
-        )
-        PlaceSearchField(
-            label = "Work",
-            value = work,
-            selectedPlace = selectedWork,
-            onValueChange = {
-                work = it
-                selectedWork = null
-            },
-            onPlaceSelected = {
-                selectedWork = it
-                work = it.label
-            }
-        )
-        PlaceSearchField(
-            label = "College",
-            value = college,
-            selectedPlace = selectedCollege,
-            onValueChange = {
-                college = it
-                selectedCollege = null
-            },
-            onPlaceSelected = {
-                selectedCollege = it
-                college = it.label
-            }
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            Button(
-                onClick = {
-                    status = "Resolving places..."
-                    Thread {
-                        val existing = snapshot.savedPlaces.associateBy { normalizedPlaceKind(it.kind) }
-                        val updated = buildUpdatedFixedPlaces(
-                            existingPlaces = snapshot.savedPlaces,
-                            home = resolvePlaceForSave("home", home, selectedHome, existing["home"]),
-                            work = resolvePlaceForSave("work", work, selectedWork, existing["work"] ?: existing["office"]),
-                            college = resolvePlaceForSave("college", college, selectedCollege, existing["college"])
-                        )
-                        (context as? ComponentActivity)?.runOnUiThread {
-                            savePlaces(context, updated)
-                            status = if (updated.none { it.latitude != null && it.longitude != null }) {
-                                "No places resolved. Check gateway and Maps key."
-                            } else {
-                                "Saved home, work, and college place settings."
-                            }
-                        }
-                    }.start()
-                },
-                modifier = Modifier.weight(1f)
-            ) { Text("Save") }
-            OutlinedButton(
-                onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=${Uri.encode(home.ifBlank { work.ifBlank { college.ifBlank { "near me" } } })}"))) },
-                modifier = Modifier.weight(1f)
-            ) { Text("Map") }
-        }
-        Text(status, color = CapeMuted)
-        places.forEach { place ->
-            MetricRow(
-                place.kind.replaceFirstChar { it.titlecase() },
-                place.latitude?.let { "%.4f, %.4f - %dm radius".format(it, place.longitude, place.radiusMeters) } ?: place.query
+    // ── Avatar / Profile Header ───────────────────────────────────────────────
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                Brush.linearGradient(listOf(CapePrimary, CapePrimaryDark)),
+                RoundedCornerShape(20.dp)
             )
+            .padding(20.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            // Avatar circle
+            Box(
+                modifier = Modifier
+                    .size(60.dp)
+                    .background(Color.White.copy(alpha = 0.2f), CircleShape)
+                    .border(2.dp, Color.White.copy(alpha = 0.5f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    role.take(1).uppercase(),
+                    color = Color.White,
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text("My Profile", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                Box(
+                    modifier = Modifier
+                        .background(Color.White.copy(alpha = 0.2f), RoundedCornerShape(100.dp))
+                        .padding(horizontal = 10.dp, vertical = 3.dp)
+                ) {
+                    Text(
+                        role.replaceFirstChar { it.titlecase() },
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Text(
+                    "${snapshot.locationState} · ${if (snapshot.currentLatitude != null) "GPS active" else "No GPS"}",
+                    color = Color.White.copy(alpha = 0.75f),
+                    fontSize = 12.sp
+                )
+            }
         }
     }
+
+    // ── Role Selector (Segmented) ─────────────────────────────────────────────
     GlassCard {
-        Text("Daily Routine", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        Text("CAPE uses this to suggest day blocks and add confirmed events to Calendar.", color = CapeMuted)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            FilterChip(selected = role == "student", onClick = { role = "student" }, label = { Text("Student") })
-            FilterChip(selected = role == "employee", onClick = { role = "employee" }, label = { Text("Employee") })
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(Icons.Outlined.Person, contentDescription = null, tint = CapePrimary, modifier = Modifier.size(18.dp))
+            Text("Daily Role", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         }
-        OutlinedTextField(value = startTime, onValueChange = { startTime = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Start time HH:mm") })
-        OutlinedTextField(value = endTime, onValueChange = { endTime = it }, modifier = Modifier.fillMaxWidth(), label = { Text("End time HH:mm") })
+        Text("Affects how CAPE interprets your schedule and stress context.", color = CapeMuted, fontSize = 13.sp)
+        HorizontalDivider(color = CapeOutlineVariant, thickness = 0.5.dp)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(CapeSecondaryContainer, RoundedCornerShape(12.dp))
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            listOf("student" to "🎓 Student", "employee" to "💼 Employee").forEach { (key, label) ->
+                val selected = role == key
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { role = key }
+                        .background(
+                            if (selected) CapePrimary else Color.Transparent,
+                            RoundedCornerShape(10.dp)
+                        )
+                        .padding(vertical = 12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        label,
+                        color = if (selected) Color.White else CapeText,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                        fontSize = 14.sp
+                    )
+                }
+            }
+        }
+    }
+
+    // ── Routine Times ─────────────────────────────────────────────────────────
+    GlassCard {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(Icons.Filled.Schedule, contentDescription = null, tint = CapePrimary, modifier = Modifier.size(18.dp))
+            Text("Daily Routine", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        }
+        Text("CAPE uses this to suggest day blocks and add events to Calendar.", color = CapeMuted, fontSize = 13.sp)
+        HorizontalDivider(color = CapeOutlineVariant, thickness = 0.5.dp)
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Start time", color = CapeMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                StyledTextField(value = startTime, onValueChange = { startTime = it }, label = "HH:mm")
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("End time", color = CapeMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                StyledTextField(value = endTime, onValueChange = { endTime = it }, label = "HH:mm")
+            }
+        }
         Button(
             onClick = {
                 prefs.edit()
@@ -1152,11 +1848,172 @@ private fun ProfileSection(snapshot: ContextSnapshot) {
                     .apply()
                 status = "Routine saved."
             },
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = CapeAccent)
-        ) { Text("Save Routine") }
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+            shape = RoundedCornerShape(10.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = CapePrimary)
+        ) { Text("Save Routine", fontWeight = FontWeight.SemiBold) }
+    }
+
+    // ── Saved Places ──────────────────────────────────────────────────────────
+    GlassCard {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(Icons.Outlined.Room, contentDescription = null, tint = CapePrimary, modifier = Modifier.size(18.dp))
+            Text("Saved Places", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        }
+        Text("Type a place name, tap a suggestion, then save.", color = CapeMuted, fontSize = 13.sp)
+        HorizontalDivider(color = CapeOutlineVariant, thickness = 0.5.dp)
+
+        // Home
+        PlaceSectionLabel(emoji = "🏠", label = "Home", place = selectedHome)
+        PlaceSearchField(
+            label = "Search home address…",
+            value = home,
+            selectedPlace = selectedHome,
+            onValueChange = { home = it; selectedHome = null },
+            onPlaceSelected = { selectedHome = it; home = it.label }
+        )
+
+        // Work
+        PlaceSectionLabel(emoji = "💼", label = "Work", place = selectedWork)
+        PlaceSearchField(
+            label = "Search work address…",
+            value = work,
+            selectedPlace = selectedWork,
+            onValueChange = { work = it; selectedWork = null },
+            onPlaceSelected = { selectedWork = it; work = it.label }
+        )
+
+        // College
+        PlaceSectionLabel(emoji = "🎓", label = "College", place = selectedCollege)
+        PlaceSearchField(
+            label = "Search college address…",
+            value = college,
+            selectedPlace = selectedCollege,
+            onValueChange = { college = it; selectedCollege = null },
+            onPlaceSelected = { selectedCollege = it; college = it.label }
+        )
+
+        // Status message
+        if (status.isNotBlank()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        if (status.startsWith("Saved") || status.startsWith("Routine")) StressLowBg else StressHighBg,
+                        RoundedCornerShape(8.dp)
+                    )
+                    .padding(10.dp)
+            ) {
+                Text(
+                    status,
+                    fontSize = 13.sp,
+                    color = if (status.startsWith("Saved") || status.startsWith("Routine")) CapeTertiary else StressHigh
+                )
+            }
+        }
+
+        // Action buttons
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+            Button(
+                onClick = {
+                    status = "Resolving places…"
+                    Thread {
+                        val existing = places.associateBy { normalizedPlaceKind(it.kind) }
+                        val updated = buildUpdatedFixedPlaces(
+                            existingPlaces = places,
+                            home = resolvePlaceForSave("home", home, selectedHome, existing["home"]),
+                            work = resolvePlaceForSave("work", work, selectedWork, existing["work"] ?: existing["office"]),
+                            college = resolvePlaceForSave("college", college, selectedCollege, existing["college"])
+                        )
+                        (context as? ComponentActivity)?.runOnUiThread {
+                            savePlaces(context, updated)
+                            places = updated
+                            selectedHome = updated.firstOrNull { normalizedPlaceKind(it.kind) == "home" }
+                            selectedWork = updated.firstOrNull { normalizedPlaceKind(it.kind) == "work" }
+                            selectedCollege = updated.firstOrNull { normalizedPlaceKind(it.kind) == "college" }
+                            home = selectedHome?.query ?: home
+                            work = selectedWork?.query ?: work
+                            college = selectedCollege?.query ?: college
+                            val resolvedCount = updated.count { it.latitude != null && it.longitude != null }
+                            status = if (resolvedCount == 0) {
+                                "Saved place names. Exact map coordinates could not be resolved right now."
+                            } else {
+                                "Saved places ($resolvedCount resolved to map coordinates)."
+                            }
+                        }
+                    }.start()
+                },
+                modifier = Modifier.weight(2f).height(48.dp),
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = CapePrimary)
+            ) { Text("Save Places", fontWeight = FontWeight.SemiBold) }
+            OutlinedButton(
+                onClick = {
+                    val query = home.ifBlank { work.ifBlank { college.ifBlank { "near me" } } }
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=${Uri.encode(query)}")))
+                },
+                modifier = Modifier.weight(1f).height(48.dp),
+                shape = RoundedCornerShape(10.dp)
+            ) { Text("Map") }
+        }
+    }
+
+    // ── Saved Places Summary ──────────────────────────────────────────────────
+    if (places.isNotEmpty()) {
+        GlassCard {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("📍", fontSize = 16.sp)
+                Text("Place Summary", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            }
+            places.forEach { place ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        val emoji = when (place.kind.lowercase()) {
+                            "home" -> "🏠"; "work", "office" -> "💼"; "college" -> "🎓"; else -> "📍"
+                        }
+                        Text(emoji, fontSize = 14.sp)
+                        Text(place.kind.replaceFirstChar { it.titlecase() }, color = CapeMuted, fontSize = 13.sp)
+                    }
+                    Text(
+                        place.latitude?.let { "%.3f, %.3f".format(it, place.longitude) } ?: place.query.take(24),
+                        color = if (place.latitude != null) CapeGreen else CapeMuted,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        }
     }
 }
+
+@Composable
+private fun PlaceSectionLabel(emoji: String, label: String, place: SavedPlace?) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.padding(top = 4.dp)
+    ) {
+        Text(emoji, fontSize = 14.sp)
+        Text(label, color = CapeMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        if (place?.latitude != null) {
+            Spacer(Modifier.weight(1f))
+            Box(
+                modifier = Modifier
+                    .background(StressLowBg, RoundedCornerShape(100.dp))
+                    .padding(horizontal = 8.dp, vertical = 2.dp)
+            ) {
+                Text("✓ Set", color = StressLow, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
+}
+
+
+
 
 @Composable
 private fun TodoSection(
@@ -1171,108 +2028,327 @@ private fun TodoSection(
     var updateTimes by remember { mutableStateOf(loadTodoPromptTimes(context)) }
     var timeDraft by remember { mutableStateOf(updateTimes.joinToString(",")) }
     var status by remember { mutableStateOf("") }
+    var showTimesConfig by remember { mutableStateOf(false) }
 
-    GlassCard {
-        Text("Day Todo", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        Text("Pending work affects CAPE stress scoring. Add due times like 14:30 when urgency matters.", color = CapeMuted)
-        MetricRow("Pending", snapshot.todoPendingCount.toString())
-        MetricRow("Urgent", snapshot.todoUrgentCount.toString())
-        MetricRow("Overdue", snapshot.todoOverdueCount.toString())
-        MetricRow("Todo pressure", "${snapshot.todoPressureScore}/100")
-        if (list.items.isEmpty()) {
-            Text("No todos for today yet.", color = CapeMuted)
-        }
-        list.items.forEach { item ->
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(item.title, fontWeight = FontWeight.SemiBold)
-                    Text(todoMetaLabel(item), color = CapeMuted)
+    // ── Stats summary bar ─────────────────────────────────────────────────────
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        listOf(
+            Triple("Pending", snapshot.todoPendingCount.toString(), CapePrimary),
+            Triple("Urgent", snapshot.todoUrgentCount.toString(), CapeOrange),
+            Triple("Overdue", snapshot.todoOverdueCount.toString(), StressHigh),
+            Triple("Pressure", "${snapshot.todoPressureScore}%", CapeTertiary)
+        ).forEach { (label, value, color) ->
+            Card(
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+                elevation = CardDefaults.cardElevation(0.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(GlassWhite.copy(0.9f), RoundedCornerShape(12.dp))
+                        .border(1.dp, CapeGlassBorder, RoundedCornerShape(12.dp))
+                        .padding(10.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Text(value, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, color = color)
+                    Text(label, fontSize = 10.sp, color = CapeMuted)
                 }
-                FilterChip(
-                    selected = item.completed,
+            }
+        }
+    }
+
+    // ── Add / Edit Form ───────────────────────────────────────────────────────
+    GlassCard(container = if (editingId != null) CapePrimaryContainer.copy(alpha = 0.4f) else CapeGlass) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val taskIcon = if (editingId != null) Icons.Filled.Edit else Icons.Filled.Add
+            Icon(
+                taskIcon,
+                contentDescription = null,
+                tint = CapePrimary,
+                modifier = Modifier.size(18.dp)
+            )
+            Text(
+                if (editingId != null) "Edit Task" else "Add New Task",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            if (editingId != null) {
+                Spacer(Modifier.weight(1f))
+                Box(
+                    modifier = Modifier
+                        .background(CapePrimaryContainer, RoundedCornerShape(100.dp))
+                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                ) { Text("Editing", fontSize = 11.sp, color = CapePrimaryDark, fontWeight = FontWeight.SemiBold) }
+            }
+        }
+        HorizontalDivider(color = CapeOutlineVariant, thickness = 0.5.dp)
+        StyledTextField(value = draftTitle, onValueChange = { draftTitle = it }, label = "Task title…")
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Start time", color = CapeMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                ClockTimeField(label = "HH:mm", value = draftStart, optional = true, onChange = { draftStart = it })
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("End time (optional)", color = CapeMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                ClockTimeField(label = "HH:mm", value = draftEnd, optional = true, onChange = { draftEnd = it })
+            }
+        }
+        if (status.isNotBlank()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        if (status.startsWith("Todo saved") || status.startsWith("Todo removed")) StressLowBg else StressHighBg.copy(alpha = 0.4f),
+                        RoundedCornerShape(8.dp)
+                    )
+                    .padding(10.dp)
+            ) {
+                Text(status, color = if (status.startsWith("Todo saved") || status.startsWith("Todo removed")) CapeTertiary else StressHigh, fontSize = 13.sp)
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+            if (editingId != null) {
+                OutlinedButton(
                     onClick = {
-                        list = list.copy(items = list.items.map { if (it.id == item.id) it.copy(completed = !it.completed, updatedAt = System.currentTimeMillis()) else it }, updatedAt = System.currentTimeMillis())
-                        saveTodoList(context, list)
-                        recordTodoEdit(context, list, "completed:${item.title}")
+                        editingId = null; draftTitle = ""; draftStart = java.time.LocalTime.now().withSecond(0).withNano(0).toString().take(5); draftEnd = ""; status = ""
                     },
-                    label = { Text(if (item.completed) "Done" else "Open") }
-                )
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    shape = RoundedCornerShape(10.dp)
+                ) { Text("Cancel") }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = {
-                    editingId = item.id
-                    draftTitle = item.title
-                    draftStart = formatTodoClock(item.startAt) ?: java.time.LocalTime.now().toString().take(5)
-                    draftEnd = formatTodoClock(item.endAt) ?: ""
-                    status = "Editing ${item.title}"
-                }) { Text("Update") }
-                OutlinedButton(onClick = {
-                    list = list.copy(items = list.items.filterNot { it.id == item.id }, updatedAt = System.currentTimeMillis())
+            Button(
+                onClick = {
+                    val title = draftTitle.trim()
+                    if (title.isBlank()) return@Button
+                    val startAt = parseTodoTimeToday(draftStart)
+                    if (startAt == null) { status = "Start time is required."; return@Button }
+                    val endAt = parseTodoTimeToday(draftEnd)
+                    val now = System.currentTimeMillis()
+                    val item = TodoItem(
+                        id = editingId ?: "todo_${now}",
+                        title = title, startAt = startAt, endAt = endAt,
+                        completed = false, createdAt = now, updatedAt = now
+                    )
+                    val todayList = ensureTodayTodoList(list)
+                    list = if (editingId == null) {
+                        todayList.copy(items = todayList.items + item, updatedAt = now)
+                    } else {
+                        todayList.copy(items = todayList.items.map { existing ->
+                            if (existing.id == editingId) item.copy(createdAt = existing.createdAt, completed = existing.completed) else existing
+                        }, updatedAt = now)
+                    }
                     saveTodoList(context, list)
-                    recordTodoEdit(context, list, "removed:${item.title}")
-                    if (editingId == item.id) editingId = null
-                    status = "Todo removed."
-                }) { Text("Remove") }
+                    recordTodoEdit(context, list, if (editingId == null) "added:$title" else "updated:$title")
+                    draftTitle = ""; draftStart = java.time.LocalTime.now().withSecond(0).withNano(0).toString().take(5); draftEnd = ""; editingId = null
+                    status = "Todo saved and sent to OpenClaw."
+                },
+                modifier = Modifier.weight(if (editingId != null) 2f else 1f).height(48.dp),
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = CapePrimary)
+            ) { Text(if (editingId == null) "Add Task" else "Update Task", fontWeight = FontWeight.SemiBold) }
+        }
+    }
+
+    // ── Day Timeline ──────────────────────────────────────────────────────────
+    GlassCard {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Outlined.DateRange, contentDescription = null, tint = CapePrimary, modifier = Modifier.size(18.dp))
+                Text("Today's Timeline", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            }
+            Text("${list.items.count { !it.completed }} left", color = CapeMuted, fontSize = 12.sp)
+        }
+        HorizontalDivider(color = CapeOutlineVariant, thickness = 0.5.dp)
+
+        if (list.items.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 20.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("✅", fontSize = 28.sp)
+                    Text("All clear — no tasks yet.", color = CapeMuted, fontSize = 14.sp)
+                    Text("Add a task above to get started.", color = CapeMuted, fontSize = 12.sp)
+                }
             }
         }
-        OutlinedTextField(value = draftTitle, onValueChange = { draftTitle = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Todo") })
-        ClockTimeField(label = "Start time", value = draftStart, onChange = { draftStart = it })
-        ClockTimeField(label = "End time optional", value = draftEnd, optional = true, onChange = { draftEnd = it })
-        Button(
-            onClick = {
-                val title = draftTitle.trim()
-                if (title.isBlank()) return@Button
-                val startAt = parseTodoTimeToday(draftStart)
-                if (startAt == null) {
-                    status = "Start time is required."
-                    return@Button
+
+        // Timeline items
+        list.items.sortedBy { it.startAt }.forEachIndexed { index, item ->
+            val isLast = index == list.items.size - 1
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                // Timeline rail
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(36.dp)) {
+                    // Time badge
+                    Box(
+                        modifier = Modifier
+                            .background(
+                                if (item.completed) CapeSecondaryContainer else CapePrimaryContainer,
+                                RoundedCornerShape(6.dp)
+                            )
+                            .padding(horizontal = 4.dp, vertical = 2.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            formatTodoClock(item.startAt) ?: "?",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (item.completed) CapeSecondary else CapePrimary
+                        )
+                    }
+                    // Connecting line
+                    if (!isLast) {
+                        Box(
+                            modifier = Modifier
+                                .width(2.dp)
+                                .height(32.dp)
+                                .background(CapeOutlineVariant)
+                        )
+                    }
                 }
-                val endAt = parseTodoTimeToday(draftEnd)
-                val now = System.currentTimeMillis()
-                val item = TodoItem(
-                    id = editingId ?: "todo_${now}",
-                    title = title,
-                    startAt = startAt,
-                    endAt = endAt,
-                    completed = false,
-                    createdAt = now,
-                    updatedAt = now
-                )
-                val todayList = ensureTodayTodoList(list)
-                list = if (editingId == null) {
-                    todayList.copy(items = todayList.items + item, updatedAt = now)
-                } else {
-                    todayList.copy(items = todayList.items.map { existing ->
-                        if (existing.id == editingId) item.copy(createdAt = existing.createdAt, completed = existing.completed) else existing
-                    }, updatedAt = now)
+                // Task card
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(bottom = if (isLast) 0.dp else 8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            item.title,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (item.completed) CapeMuted else CapeText,
+                            fontSize = 14.sp,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        // Done toggle
+                        Box(
+                            modifier = Modifier
+                                .clickable {
+                                    list = list.copy(
+                                        items = list.items.map {
+                                            if (it.id == item.id) it.copy(completed = !it.completed, updatedAt = System.currentTimeMillis()) else it
+                                        },
+                                        updatedAt = System.currentTimeMillis()
+                                    )
+                                    saveTodoList(context, list)
+                                    recordTodoEdit(context, list, "completed:${item.title}")
+                                }
+                                .background(
+                                    if (item.completed) StressLowBg else CapeSecondaryContainer,
+                                    RoundedCornerShape(100.dp)
+                                )
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                if (item.completed) "✓ Done" else "Open",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (item.completed) StressLow else CapeMuted
+                            )
+                        }
+                    }
+                    // Meta + actions row
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(todoMetaLabel(item), color = CapeMuted, fontSize = 11.sp)
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                "Edit",
+                                color = CapePrimary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.clickable {
+                                    editingId = item.id
+                                    draftTitle = item.title
+                                    draftStart = formatTodoClock(item.startAt) ?: java.time.LocalTime.now().toString().take(5)
+                                    draftEnd = formatTodoClock(item.endAt) ?: ""
+                                    status = "Editing ${item.title}"
+                                }
+                            )
+                            Text("·", color = CapeMuted, fontSize = 12.sp)
+                            Text(
+                                "Delete",
+                                color = StressHigh,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.clickable {
+                                    list = list.copy(
+                                        items = list.items.filterNot { it.id == item.id },
+                                        updatedAt = System.currentTimeMillis()
+                                    )
+                                    saveTodoList(context, list)
+                                    recordTodoEdit(context, list, "removed:${item.title}")
+                                    if (editingId == item.id) editingId = null
+                                    status = "Todo removed."
+                                }
+                            )
+                        }
+                    }
                 }
-                saveTodoList(context, list)
-                recordTodoEdit(context, list, if (editingId == null) "added:$title" else "updated:$title")
-                draftTitle = ""
-                draftStart = java.time.LocalTime.now().withSecond(0).withNano(0).toString().take(5)
-                draftEnd = ""
-                editingId = null
-                status = "Todo saved and sent to OpenClaw."
-            },
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = CapeAccent)
-        ) { Text(if (editingId == null) "Add Todo" else "Update Todo") }
-        OutlinedTextField(value = timeDraft, onValueChange = { timeDraft = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Prompt times, comma-separated HH:mm") })
-        Button(
-            onClick = {
-                updateTimes = parseTodoPromptTimes(timeDraft)
-                saveTodoPromptTimes(context, updateTimes)
-                status = "Todo update prompt times saved."
-            },
-            modifier = Modifier.fillMaxWidth()
-        ) { Text("Save Update Times") }
-        val learned = loadLearnedTodoHours(context)
-        if (learned.isNotEmpty()) {
-            Text("Learned update windows: ${learned.joinToString { "%02d:00".format(it) }}", color = CapeMuted)
+            }
         }
-        if (status.isNotBlank()) Text(status, color = CapeMuted)
+    }
+
+    // ── Update times config (collapsible) ─────────────────────────────────────
+    GlassCard {
+        Row(
+            modifier = Modifier.fillMaxWidth().clickable { showTimesConfig = !showTimesConfig },
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Filled.Notifications, contentDescription = null, tint = CapePrimary, modifier = Modifier.size(18.dp))
+                Text("Prompt Schedule", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            }
+            Text(if (showTimesConfig) "▲" else "▼", color = CapeMuted, fontSize = 12.sp)
+        }
+        if (showTimesConfig) {
+            HorizontalDivider(color = CapeOutlineVariant, thickness = 0.5.dp)
+            Text("Times when CAPE asks you to update your todo list (HH:mm, comma-separated)", color = CapeMuted, fontSize = 12.sp)
+            StyledTextField(value = timeDraft, onValueChange = { timeDraft = it }, label = "e.g. 09:00,13:00,18:00")
+            val learned = loadLearnedTodoHours(context)
+            if (learned.isNotEmpty()) {
+                Text(
+                    "Learned windows: ${learned.joinToString { "%02d:00".format(it) }}",
+                    color = CapeMuted, fontSize = 12.sp
+                )
+            }
+            Button(
+                onClick = {
+                    updateTimes = parseTodoPromptTimes(timeDraft)
+                    saveTodoPromptTimes(context, updateTimes)
+                    status = "Prompt times saved."
+                },
+                modifier = Modifier.fillMaxWidth().height(44.dp),
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = CapePrimary)
+            ) { Text("Save Prompt Times", fontWeight = FontWeight.SemiBold) }
+        }
     }
 }
+
+
 
 @Composable
 private fun PlaceSearchField(
@@ -1443,42 +2519,58 @@ private fun StressGauge(score: Int, level: String) {
 
 @Composable
 private fun InfoTile(label: String, value: String, modifier: Modifier = Modifier) {
-    GlassCard(modifier = modifier, container = GlassStrong) {
-        Text(label, color = CapeMuted)
-        Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-    }
-}
-
-@Composable
-private fun GlassCard(
-    modifier: Modifier = Modifier,
-    container: Color = Glass,
-    content: @Composable ColumnScope.() -> Unit
-) {
     Card(
-        modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = container),
-        shape = RoundedCornerShape(18.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+        modifier = modifier,
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .border(1.dp, Color.White.copy(alpha = 0.55f), RoundedCornerShape(18.dp))
+                .background(Brush.linearGradient(listOf(GlassWhite.copy(0.95f), CapeGlass)), RoundedCornerShape(14.dp))
+                .border(1.dp, CapeGlassBorder, RoundedCornerShape(14.dp))
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(label, color = CapeMuted, fontSize = 12.sp)
+            Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, color = CapeText)
+        }
+    }
+}
+
+
+
+@Composable
+private fun GlassCard(
+    modifier: Modifier = Modifier,
+    container: Color = CapeGlass,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
                 .background(
                     Brush.linearGradient(
-                        listOf(
-                            Color.White.copy(alpha = 0.50f),
-                            Color.White.copy(alpha = 0.18f)
-                        )
-                    )
+                        listOf(GlassWhite.copy(alpha = 0.92f), container.copy(alpha = 0.82f))
+                    ),
+                    RoundedCornerShape(16.dp)
                 )
+                .border(1.dp, CapeGlassBorder, RoundedCornerShape(16.dp))
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
             content = content
         )
     }
 }
+
+
 
 @Composable
 private fun ClockTimeField(
@@ -1487,6 +2579,7 @@ private fun ClockTimeField(
     optional: Boolean = false,
     onChange: (String) -> Unit
 ) {
+    val context = LocalContext.current
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text(label, fontWeight = FontWeight.SemiBold)
@@ -1498,35 +2591,45 @@ private fun ClockTimeField(
             modifier = Modifier.fillMaxWidth(),
             label = { Text("HH:mm") }
         )
-        AndroidView(
-            modifier = Modifier.fillMaxWidth().height(160.dp),
-            factory = { ctx ->
-                android.widget.TimePicker(ctx).apply {
-                    setIs24HourView(true)
-                    val parsed = runCatching { java.time.LocalTime.parse(value.ifBlank { "09:00" }) }.getOrDefault(java.time.LocalTime.of(9, 0))
-                    hour = parsed.hour
-                    minute = parsed.minute
-                    setOnTimeChangedListener { _, h, m -> onChange("%02d:%02d".format(h, m)) }
-                }
+        OutlinedButton(
+            onClick = {
+                val parsed = runCatching { java.time.LocalTime.parse(value.ifBlank { "09:00" }) }
+                    .getOrDefault(java.time.LocalTime.of(9, 0))
+                TimePickerDialog(
+                    context,
+                    { _, h, m -> onChange("%02d:%02d".format(h, m)) },
+                    parsed.hour,
+                    parsed.minute,
+                    true
+                ).show()
             },
-            update = { picker ->
-                val parsed = runCatching { java.time.LocalTime.parse(value.ifBlank { "09:00" }) }.getOrNull()
-                if (parsed != null && (picker.hour != parsed.hour || picker.minute != parsed.minute)) {
-                    picker.hour = parsed.hour
-                    picker.minute = parsed.minute
-                }
-            }
-        )
+            modifier = Modifier.fillMaxWidth().height(44.dp),
+            shape = RoundedCornerShape(10.dp)
+        ) { Text("Pick time") }
     }
 }
 
 @Composable
 private fun MetricRow(label: String, value: String) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label, color = CapeMuted, modifier = Modifier.weight(1f))
-        Text(value, color = CapeText, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.End, modifier = Modifier.weight(1f))
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, color = CapeMuted, fontSize = 13.sp, modifier = Modifier.weight(1f))
+        Text(
+            value,
+            color = CapeText,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 13.sp,
+            textAlign = TextAlign.End,
+            modifier = Modifier.weight(1f),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
+
 
 private fun readableLocation(snapshot: ContextSnapshot): String {
     return if (snapshot.currentLatitude != null && snapshot.currentLongitude != null) {
@@ -1565,12 +2668,23 @@ private fun resolvePlaceForSave(kind: String, query: String, selected: SavedPlac
     if (query.isBlank()) return existing
     val resolved = selected?.takeIf { it.latitude != null && it.longitude != null }
         ?: runCatching { GatewayClient().geocodePlace(query) }.getOrNull()
-        ?: existing
-        ?: return null
-    return resolved.copy(
+    val fallback = existing?.copy(
         kind = kind,
         label = kind.replaceFirstChar { it.titlecase() },
-        query = resolved.label.ifBlank { query },
+        query = query.trim(),
+        radiusMeters = fixedPlaceRadius(kind)
+    ) ?: SavedPlace(
+        kind = kind,
+        label = kind.replaceFirstChar { it.titlecase() },
+        query = query.trim(),
+        latitude = null,
+        longitude = null,
+        radiusMeters = fixedPlaceRadius(kind)
+    )
+    return (resolved ?: fallback).copy(
+        kind = kind,
+        label = kind.replaceFirstChar { it.titlecase() },
+        query = query.trim(),
         radiusMeters = fixedPlaceRadius(kind)
     )
 }
