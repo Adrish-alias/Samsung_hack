@@ -35,8 +35,10 @@ CAPE is a cutting-edge Android-first automation system that leverages AI to unde
 
 ### Prerequisites
 - **Node.js 22+** (for gateway server)
+- **JDK 25+** (required for Android build)
 - **Android SDK** with ADB (for phone communication)
 - **Android device** with USB debugging enabled
+- **Google Maps API Key** (for location services)
 
 ### Installation & Setup
 
@@ -59,6 +61,9 @@ npm install
 
 #### 🪟 Windows
 ```powershell
+# Install JDK 25 (if not already installed)
+winget install Microsoft.OpenJDK.25
+
 # Clone and install dependencies
 git clone <repository-url>
 cd CAPE2
@@ -82,10 +87,17 @@ npm install
 
 2. **Connect your device** via USB and authorize debugging
 
-3. **Configure Environment** (optional):
+3. **Configure Environment** (required):
    ```bash
    cp .env.example .env
-   # Edit .env with your preferences
+   # Edit .env with your preferences and API keys
+   ```
+   
+   **Required Environment Variables:**
+   ```bash
+   GOOGLE_MAPS_API_KEY=your_google_maps_api_key_here
+   OPENCLAW_BASE_URL=http://127.0.0.1:18789  # Optional
+   OPENCLAW_TOKEN=your_openclaw_token_here        # Optional
    ```
 
 ## 📊 Architecture Overview
@@ -122,6 +134,8 @@ npm install
 - **Smart Transitions**: Device behavior adapts as you move between contexts
 - **Feedback Loop**: Provide feedback to improve AI recommendations
 - **Commute Assistance**: Get real-time traffic updates and route suggestions
+- **USB Sync**: Automatic connection maintenance via `keep-phone-synced.ps1`
+- **Local Processing**: All data stays on your devices, no cloud dependencies
 
 ## 🧪 Testing
 
@@ -186,18 +200,33 @@ Configure OpenClaw integration via environment variables:
 - `OPENCLAW_TOKEN` - Authentication token
 - `OPENCLAW_AGENT_ID` - Agent identifier (default: "cape")
 
-## 📁 Project Structure
+## � Direct APK Installation
+
+For quick testing without building from source:
+
+1. Download `Cape.apk` from repository
+2. Enable USB debugging on Android device:
+   - Settings → About Phone → Tap "Build Number" 7 times
+   - Settings → Developer Options → Enable "USB Debugging"
+3. Install APK: `adb install Cape.apk`
+4. Start gateway server: `.\tools\start-gateway.ps1`
+5. Connect phone via USB - app will automatically sync
+
+## �� Project Structure
 
 ```
-CAPE2/
-├── packages/
-│   ├── cape-core/          # Core decision logic and stress scoring
-│   └── cape-gateway/       # HTTP gateway server
-├── android/                # Android application
-├── openclaw/               # AI agent configurations
-├── tools/                  # Build and deployment scripts
-├── docs/                   # Architecture documentation
-└── .env.example            # Environment configuration template
+CAPE/
+├── CAPE2/                   # Main development workspace
+│   ├── packages/
+│   │   ├── cape-core/          # Core decision logic and stress scoring
+│   │   └── cape-gateway/       # HTTP gateway server
+│   ├── android/                # Android application source
+│   ├── openclaw/               # AI agent configurations
+│   ├── tools/                  # Build and deployment scripts
+│   └── .env.example            # Environment configuration template
+├── Cape.apk                 # Pre-built APK for distribution
+├── README.md                 # This file
+└── openclaw/                 # OpenClaw workspace and memory
 ```
 
 ## 🔧 Development
@@ -205,14 +234,21 @@ CAPE2/
 ### Building from Source
 ```bash
 # Install dependencies
-pnpm install
+npm install
 
 # Build all packages
-pnpm build
+npm run build
 
 # Run in development mode
-pnpm dev
+npm run dev
 ```
+
+### USB Connection Maintenance
+The system includes automatic USB connection management:
+- `keep-phone-synced.ps1` maintains gateway and ADB reverse port forwarding
+- Runs in background to ensure continuous phone-gateway communication
+- Automatically restarts gateway if connection is lost
+- Monitors device connection status every 10 seconds
 
 ### Contributing
 1. Fork the repository

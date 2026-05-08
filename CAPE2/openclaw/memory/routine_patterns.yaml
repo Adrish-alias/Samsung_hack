@@ -228,9 +228,9 @@ runtime_state:
     - BRIGHTNESS_40
     - WALLPAPER_FOCUS
   dnd_on_since: "2026-05-08T03:34:01+05:30"
-  last_stress_score: 44
-  last_stress_raw_score: 44
-  last_stress_at: "2026-05-08T23:04:37+05:30"
+  last_stress_score: 45
+  last_stress_raw_score: 45
+  last_stress_at: "2026-05-08T23:16:37+05:30"
 
 todo_state:
   last_update_at: "2026-05-08T20:04:42.044929+05:30"
