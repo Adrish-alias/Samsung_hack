@@ -27,3 +27,5 @@ manual setup burden without hiding what it is doing.
 - When daily reflection includes "Personal stress", adjust stress interpretation by 15.
 - At learned todo update windows (22:00), ask before opening today's todo list.
 - At learned todo update windows (22:00, 03:00), ask before opening today's todo list.
+- At learned todo update windows (22:00, 03:00, 19:00), ask before opening today's todo list.
+- At learned todo update windows (22:00, 03:00, 19:00, 20:00), ask before opening today's todo list.

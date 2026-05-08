@@ -5,8 +5,8 @@ user:
     calendar: false
     location: false
     usage_stats: false
-    notification_policy_access: true
-    write_settings: true
+    notification_policy_access: false
+    write_settings: false
 
 
 preferences:
@@ -19,13 +19,15 @@ preferences:
   todo_update_windows:
     - "22:00"
     - "03:00"
+    - "19:00"
+    - "20:00"
 
 stress_triggers:
   reflection_adjustments:
-    Heavy workload: 30
-    Assignments: 20
+    Heavy workload: 45
+    Assignments: 30
     Personal stress: 15
 
-  adjustment: 16
-  last_reflection_at: "2026-05-07T21:53:54+05:30"
+  adjustment: 22
+  last_reflection_at: "2026-05-08T19:36:13+05:30"
 

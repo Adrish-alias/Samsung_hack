@@ -195,3 +195,78 @@
 - signal: neutral
 - note: removed:Ok
 - learned: todo update window 03:00
+## 2026-05-08T14:02:16.828Z feedback
+- pack: commute_alert
+- signal: neutral
+- note: i was 5 minutes late on departure
+- learned: none
+## 2026-05-08T14:03:06.064Z feedback
+- pack: day_todo
+- signal: neutral
+- note: added:Assignment
+- learned: todo update window 19:00
+## 2026-05-08T14:05:45.327Z feedback
+- pack: home_evening
+- signal: accepted
+- note: Applied: DND_OFF, RINGER_NORMAL, BRIGHTNESS_AUTO, WALLPAPER_RELAX
+- learned: none
+## 2026-05-08T14:06:28.286Z feedback
+- pack: unknown
+- signal: unknown
+- note: none
+- learned: Heavy workload +15, Assignments +10
+## 2026-05-08T14:07:16.604Z feedback
+- pack: day_todo
+- signal: neutral
+- note: added:todo
+- learned: todo update window 19:00
+## 2026-05-08T14:12:12.445Z feedback
+- pack: manual_wallpaper_demo
+- signal: accepted
+- note: User approved CAPE decision.
+- learned: none
+## 2026-05-08T14:15:30.552Z feedback
+- pack: commute_alert
+- signal: neutral
+- note: next time tell me 5 mins earlier
+- learned: none
+## 2026-05-08T14:16:24.215Z feedback
+- pack: day_todo
+- signal: neutral
+- note: completed:todo
+- learned: todo update window 19:00
+## 2026-05-08T14:16:25.293Z feedback
+- pack: day_todo
+- signal: neutral
+- note: completed:Assignment
+- learned: todo update window 19:00
+## 2026-05-08T14:21:37.411Z feedback
+- pack: commute_alert
+- signal: neutral
+- note: I was 6 minutes late today, please tell me earlier next time
+- learned: none
+## 2026-05-08T14:27:08.279Z feedback
+- pack: home_evening
+- signal: accepted
+- note: Applied RINGER_NORMAL, WALLPAPER_RELAX; blocked DND_OFF, BRIGHTNESS_AUTO
+- learned: none
+## 2026-05-08T14:33:32.191Z feedback
+- pack: day_todo
+- signal: neutral
+- note: quick_added:Assignment 1
+- learned: todo update window 20:00
+## 2026-05-08T14:33:40.099Z feedback
+- pack: day_todo
+- signal: neutral
+- note: quick_added:Assignment 2
+- learned: todo update window 20:00
+## 2026-05-08T14:34:41.185Z feedback
+- pack: day_todo
+- signal: neutral
+- note: removed:Assignment 1
+- learned: todo update window 20:00
+## 2026-05-08T14:34:41.999Z feedback
+- pack: day_todo
+- signal: neutral
+- note: removed:Assignment 2
+- learned: todo update window 20:00

@@ -4,6 +4,7 @@ locations:
     labels:
       - Kempegowda International Airport Bengaluru, Karnataka 560300, India
       - 13.0307823,77.5649893
+      - World Trade Center, BRIGADE GATEWAY, Rd, Rajajinagar, Bengaluru, Karnataka 560055, India
 
   office:
     confidence: 0.97
@@ -28,6 +29,7 @@ routines:
     - thursday@22
     - thursday@23
     - friday@3
+    - friday@19
   commute_patterns:
     -
       destination: Church Street, Church St, Haridevpur, Shanthala Nagar, Ashok Nagar, Bengaluru, Karnataka, India
@@ -113,6 +115,12 @@ routines:
       observations: 2
       last_recorded_at: "2026-05-08T03:19:23+05:30"
 
+    -
+      destination: World Trade Center, BRIGADE GATEWAY, Rd, Rajajinagar, Bengaluru, Karnataka 560055, India
+      avg_eta_minutes: 20
+      observations: 29
+      last_recorded_at: "2026-05-08T20:28:36+05:30"
+
   time_based_stress_trends:
     -
       hour: 23
@@ -135,9 +143,18 @@ routines:
       note: none
       recorded_at: "2026-05-07T21:53:54+05:30"
 
+    -
+      hour: 19
+      tags: Heavy workload,Assignments
+      adjustment: 25
+      note: none
+      recorded_at: "2026-05-08T19:36:13+05:30"
+
   todo_update_windows:
     - "22:00"
     - "03:00"
+    - "19:00"
+    - "20:00"
 
 pack_feedback:
   office_focus_high_stress:
@@ -161,11 +178,11 @@ pack_feedback:
     rejected: 0
 
   manual_wallpaper_demo:
-    accepted: 1
+    accepted: 2
     rejected: 1
 
   home_evening:
-    accepted: 1
+    accepted: 3
     rejected: 0
 
 
@@ -211,16 +228,16 @@ runtime_state:
     - BRIGHTNESS_40
     - WALLPAPER_FOCUS
   dnd_on_since: "2026-05-08T03:34:01+05:30"
-  last_stress_score: 64
-  last_stress_raw_score: 64
-  last_stress_at: "2026-05-08T03:55:15+05:30"
+  last_stress_score: 44
+  last_stress_raw_score: 44
+  last_stress_at: "2026-05-08T23:04:37+05:30"
 
 todo_state:
-  last_update_at: "2026-05-08T03:54:31.027126+05:30"
+  last_update_at: "2026-05-08T20:04:42.044929+05:30"
   pending: 0
   urgent: 0
   overdue: 0
-  last_note: "removed:Ok"
+  last_note: "removed:Assignment 2"
 
 decision_approvals:
   -
@@ -312,4 +329,37 @@ decision_approvals:
       - WALLPAPER_FOCUS
     note: User rejected CAPE decision.
     recorded_at: "2026-05-08T03:49:23.461317+05:30"
+
+  -
+    pack_id: home_evening
+    signal: accepted
+    confidence: 1
+    actions:
+      - DND_OFF
+      - RINGER_NORMAL
+      - BRIGHTNESS_AUTO
+      - WALLPAPER_RELAX
+    note: "Applied: DND_OFF, RINGER_NORMAL, BRIGHTNESS_AUTO, WALLPAPER_RELAX"
+    recorded_at: "2026-05-08T19:35:45.356544+05:30"
+
+  -
+    pack_id: manual_wallpaper_demo
+    signal: accepted
+    confidence: 0.88
+    actions:
+      - WALLPAPER_FOCUS
+    note: User approved CAPE decision.
+    recorded_at: "2026-05-08T19:42:12.488362+05:30"
+
+  -
+    pack_id: home_evening
+    signal: accepted
+    confidence: 1
+    actions:
+      - DND_OFF
+      - RINGER_NORMAL
+      - BRIGHTNESS_AUTO
+      - WALLPAPER_RELAX
+    note: Applied RINGER_NORMAL, WALLPAPER_RELAX; blocked DND_OFF, BRIGHTNESS_AUTO
+    recorded_at: "2026-05-08T19:57:08.325083+05:30"
 
