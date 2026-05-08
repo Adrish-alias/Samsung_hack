@@ -125,3 +125,73 @@
 - signal: neutral
 - note: completed:assignment 2
 - learned: todo update window 22:00
+## 2026-05-07T21:50:54.792Z feedback
+- pack: manual_wallpaper_demo
+- signal: rejected
+- note: User rejected CAPE decision.
+- learned: none
+## 2026-05-07T21:56:42.186Z feedback
+- pack: home_evening
+- signal: accepted
+- note: Applied: DND_OFF, RINGER_NORMAL, BRIGHTNESS_AUTO, WALLPAPER_RELAX
+- learned: none
+## 2026-05-07T21:57:18.129Z feedback
+- pack: manual_wallpaper_demo
+- signal: accepted
+- note: User approved CAPE decision.
+- learned: none
+## 2026-05-07T22:07:45.213Z feedback
+- pack: office_focus_high_stress
+- signal: rejected
+- note: User rejected CAPE decision.
+- learned: none
+## 2026-05-07T22:07:52.709Z feedback
+- pack: office_focus_high_stress
+- signal: rejected
+- note: User rejected CAPE decision.
+- learned: none
+## 2026-05-07T22:08:04.563Z feedback
+- pack: office_focus_high_stress
+- signal: rejected
+- note: User rejected CAPE decision.
+- learned: none
+## 2026-05-07T22:09:50.187Z feedback
+- pack: office_focus_high_stress
+- signal: rejected
+- note: User rejected CAPE decision.
+- learned: none
+## 2026-05-07T22:16:18.134Z feedback
+- pack: commute_alert
+- signal: neutral
+- note: do not override decision to apply pack always. first ask always for focus mode or relax mode or commute mode
+- learned: none
+## 2026-05-07T22:19:21.336Z feedback
+- pack: office_focus_high_stress
+- signal: rejected
+- note: User rejected CAPE decision.
+- learned: none
+## 2026-05-07T22:21:31.667Z feedback
+- pack: day_todo
+- signal: neutral
+- note: added:Assignment
+- learned: todo update window 03:00
+## 2026-05-07T22:22:40.379Z feedback
+- pack: day_todo
+- signal: neutral
+- note: updated:Assignment
+- learned: todo update window 03:00
+## 2026-05-07T22:23:18.164Z feedback
+- pack: day_todo
+- signal: neutral
+- note: quick_added:Ok
+- learned: todo update window 03:00
+## 2026-05-07T22:23:55.771Z feedback
+- pack: day_todo
+- signal: neutral
+- note: updated:Assignment
+- learned: todo update window 03:00
+## 2026-05-07T22:24:28.903Z feedback
+- pack: day_todo
+- signal: neutral
+- note: removed:Ok
+- learned: todo update window 03:00

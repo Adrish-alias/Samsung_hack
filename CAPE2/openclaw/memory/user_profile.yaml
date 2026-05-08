@@ -18,6 +18,7 @@ preferences:
 
   todo_update_windows:
     - "22:00"
+    - "03:00"
 
 stress_triggers:
   reflection_adjustments:

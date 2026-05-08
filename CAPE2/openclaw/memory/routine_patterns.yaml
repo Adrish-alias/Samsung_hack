@@ -1,18 +1,20 @@
 locations:
   home:
-    confidence: 0.79
+    confidence: 0.98
     labels:
       - Kempegowda International Airport Bengaluru, Karnataka 560300, India
+      - 13.0307823,77.5649893
 
   office:
-    confidence: 0.36
+    confidence: 0.97
     labels:
       - Kempegowda International Airport Bengaluru, Karnataka 560300, India
       - 12.9716,77.5946
+      - 13.0307823,77.5649893
 
 
 routines:
-  office_arrival_window: "22:00-23:00"
+  office_arrival_window: "03:00-04:00"
   fatigue_windows:
     - monday@22
     - wednesday@22
@@ -25,6 +27,7 @@ routines:
     - thursday@21
     - thursday@22
     - thursday@23
+    - friday@3
   commute_patterns:
     -
       destination: Church Street, Church St, Haridevpur, Shanthala Nagar, Ashok Nagar, Bengaluru, Karnataka, India
@@ -95,14 +98,20 @@ routines:
     -
       destination: 13.0307823,77.5649893
       avg_eta_minutes: 35
-      observations: 32
-      last_recorded_at: "2026-05-07T07:00:25+05:30"
+      observations: 36
+      last_recorded_at: "2026-05-08T03:47:06+05:30"
 
     -
       destination: Church Street, Bengaluru, Karnataka, India
       avg_eta_minutes: 26
       observations: 1
       last_recorded_at: "2026-05-07T21:49:06.3586456+05:30"
+
+    -
+      destination: Orion Mall, Dr Rajkumar Rd, Rajajinagar, Bengaluru, Karnataka 560055, India
+      avg_eta_minutes: 35
+      observations: 2
+      last_recorded_at: "2026-05-08T03:19:23+05:30"
 
   time_based_stress_trends:
     -
@@ -128,11 +137,12 @@ routines:
 
   todo_update_windows:
     - "22:00"
+    - "03:00"
 
 pack_feedback:
   office_focus_high_stress:
     accepted: 1
-    rejected: 0
+    rejected: 5
 
   recovery_mode:
     accepted: 0
@@ -148,6 +158,14 @@ pack_feedback:
 
   unknown:
     accepted: 0
+    rejected: 0
+
+  manual_wallpaper_demo:
+    accepted: 1
+    rejected: 1
+
+  home_evening:
+    accepted: 1
     rejected: 0
 
 
@@ -177,25 +195,121 @@ overrides:
   notes:
     - "Don't do this during 1:1s on Fridays"
     - it is important that you compare my live location to the location of the next meeting and use Google maps and binary search to find optimal departure time. don't give random departure time actually calculate using Google maps api and tell.
+    - User rejected CAPE decision.
+    - User rejected CAPE decision.
+    - User rejected CAPE decision.
+    - User rejected CAPE decision.
+    - User rejected CAPE decision.
+    - User rejected CAPE decision.
 
 runtime_state:
-  last_applied_pack_id: commute_alert
-  last_applied_at: "2026-05-07T22:50:45+05:30"
+  last_applied_pack_id: office_focus_high_stress
+  last_applied_at: "2026-05-08T03:54:03+05:30"
   last_applied_actions:
-    - DND_OFF
-    - RINGER_NORMAL
-    - BRIGHTNESS_65
-    - WALLPAPER_COMMUTE
-    - SEND_DEPARTURE_ALERT
-  dnd_on_since: null
-  last_stress_score: 63
-  last_stress_raw_score: 63
-  last_stress_at: "2026-05-07T23:08:26+05:30"
+    - DND_ON
+    - RINGER_VIBRATE
+    - BRIGHTNESS_40
+    - WALLPAPER_FOCUS
+  dnd_on_since: "2026-05-08T03:34:01+05:30"
+  last_stress_score: 64
+  last_stress_raw_score: 64
+  last_stress_at: "2026-05-08T03:55:15+05:30"
 
 todo_state:
-  last_update_at: "2026-05-07T22:53:14.942402+05:30"
+  last_update_at: "2026-05-08T03:54:31.027126+05:30"
   pending: 0
   urgent: 0
   overdue: 0
-  last_note: "completed:assignment 2"
+  last_note: "removed:Ok"
+
+decision_approvals:
+  -
+    pack_id: manual_wallpaper_demo
+    signal: rejected
+    confidence: 0.922
+    actions:
+      - WALLPAPER_FOCUS
+    note: User rejected CAPE decision.
+    recorded_at: "2026-05-08T03:20:56.895572+05:30"
+
+  -
+    pack_id: home_evening
+    signal: accepted
+    confidence: 1
+    actions:
+      - DND_OFF
+      - RINGER_NORMAL
+      - BRIGHTNESS_AUTO
+      - WALLPAPER_RELAX
+    note: "Applied: DND_OFF, RINGER_NORMAL, BRIGHTNESS_AUTO, WALLPAPER_RELAX"
+    recorded_at: "2026-05-08T03:26:44.305852+05:30"
+
+  -
+    pack_id: manual_wallpaper_demo
+    signal: accepted
+    confidence: 0.72
+    actions:
+      - WALLPAPER_RESET
+    note: User approved CAPE decision.
+    recorded_at: "2026-05-08T03:27:20.246945+05:30"
+
+  -
+    pack_id: office_focus_high_stress
+    signal: rejected
+    confidence: 0.8992
+    actions:
+      - DND_ON
+      - RINGER_VIBRATE
+      - BRIGHTNESS_40
+      - WALLPAPER_FOCUS
+    note: User rejected CAPE decision.
+    recorded_at: "2026-05-08T03:37:47.334206+05:30"
+
+  -
+    pack_id: office_focus_high_stress
+    signal: rejected
+    confidence: 0.8992
+    actions:
+      - DND_ON
+      - RINGER_VIBRATE
+      - BRIGHTNESS_40
+      - WALLPAPER_FOCUS
+    note: User rejected CAPE decision.
+    recorded_at: "2026-05-08T03:37:54.831751+05:30"
+
+  -
+    pack_id: office_focus_high_stress
+    signal: rejected
+    confidence: 0.8992
+    actions:
+      - DND_ON
+      - RINGER_VIBRATE
+      - BRIGHTNESS_40
+      - WALLPAPER_FOCUS
+    note: User rejected CAPE decision.
+    recorded_at: "2026-05-08T03:38:06.684296+05:30"
+
+  -
+    pack_id: office_focus_high_stress
+    signal: rejected
+    confidence: 0.8132
+    actions:
+      - DND_ON
+      - RINGER_VIBRATE
+      - BRIGHTNESS_40
+      - WALLPAPER_FOCUS
+    note: User rejected CAPE decision.
+    recorded_at: "2026-05-08T03:39:52.310922+05:30"
+
+  -
+    pack_id: office_focus_high_stress
+    signal: rejected
+    confidence: 0.8168
+    actions:
+      - DND_ON
+      - RINGER_VIBRATE
+      - BRIGHTNESS_40
+      - WALLPAPER_FOCUS
+    note: User rejected CAPE decision.
+    recorded_at: "2026-05-08T03:49:23.461317+05:30"
 
